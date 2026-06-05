@@ -188,7 +188,6 @@ const backToLogin = () => {
   z-index: 1;
 }
 
-/* Purple plus foncé - identique à Login/Register */
 .auth-features {
   background: linear-gradient(135deg, #1a0a2e 0%, #2d1b4e 50%, #1a0a2e 100%);
   padding: 48px;

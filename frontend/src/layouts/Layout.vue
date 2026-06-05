@@ -26,7 +26,7 @@ const loadUnreadCount = async () => {
   
   try {
     const res = await api.get('/messages/unread-count')
-    unreadCount.value = res.data.count || 0
+    unreadCount.value = res.data.unreadCount || res.data.count || 0
   } catch (err) {
     console.error('Error loading unread count:', err)
     unreadCount.value = 0

@@ -1,99 +1,76 @@
-import axios from "axios";
+import axios from 'axios'
 
-// Récupérer le token depuis localStorage
-const getToken = () => {
-  const token = localStorage.getItem("token");
-  if (token && token !== "undefined" && token !== "null") {
-    return token;
-  }
-  return null;
-};
-
-// Créer l'instance axios avec configuration de base
+// Instance Axios configurée pour Spring Boot
 const api = axios.create({
-  baseURL: "/api",
-  timeout: 30000,
+  baseURL: '/api',
   headers: {
-    "Content-Type": "application/json",
-    "Accept": "application/json",
-  }
-});
+    'Content-Type': 'application/json',
+    'Accept': 'application/json'
+  },
+  timeout: 60000, 
+  withCredentials: false
+})
 
-// Intercepteur de requête - AJOUTE LE TOKEN
+//  injecte le JWT à chaque requête
 api.interceptors.request.use(
   (config) => {
-    const token = getToken();
+    const token = localStorage.getItem('token')
+    console.log('🔍 Requête vers:', config.url)
+    console.log('🔑 Token dans localStorage:', token ? token.substring(0, 50) + '...' : 'NON TROUVE')
+    
     if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
-      console.log(`🔐 Token envoyé pour: ${config.url}`);
+      config.headers.Authorization = `Bearer ${token}`
+      console.log('✅ Header Authorization ajouté')
     } else {
-      console.warn(`⚠️ Pas de token pour: ${config.url}`);
+      console.log(' PAS DE TOKEN - Requête non authentifiée')
     }
-    return config;
+    
+    return config
   },
   (error) => {
-    console.error("Request interceptor error:", error);
-    return Promise.reject(error);
+    console.error(' Erreur intercepteur request:', error)
+    return Promise.reject(error)
   }
-);
-
-// Intercepteur de réponse - GESTION DES ERREURS 401
+)
 api.interceptors.response.use(
   (response) => {
-    console.log(`✅ API Success: ${response.config.url}`);
-    return response;
+    console.log('✅ Réponse réussie:', response.config.url, response.status)
+    return response
   },
   (error) => {
-    if (error.response) {
-      console.error(`❌ API Error ${error.response.status}: ${error.config?.url}`, error.response.data);
-      
-      // Si erreur 401 Unauthorized ou 403 Forbidden
-      if (error.response.status === 401 || error.response.status === 403) {
-        console.error("Erreur d'authentification, déconnexion...");
-        localStorage.removeItem("token");
-        localStorage.removeItem("user");
-        delete api.defaults.headers.common["Authorization"];
-        
-        // Rediriger vers login si pas déjà dessus
-        if (window.location.pathname !== "/login" && window.location.pathname !== "/") {
-          window.location.href = "/login";
-        }
+    console.error(' Erreur réponse:', error.response?.status, error.response?.config?.url)
+    console.error('📝 Détails erreur:', error.response?.data)
+    
+    if (error.response?.status === 401 || error.response?.status === 403) {
+      console.log(' Authentification échouée, redirection vers login')
+      localStorage.removeItem('token')
+      localStorage.removeItem('user')
+      if (window.location.pathname !== '/login') {
+        window.location.href = '/login'
       }
-    } else if (error.request) {
-      console.error("No response received:", error.request);
-    } else {
-      console.error("Request error:", error.message);
     }
-    return Promise.reject(error);
+    return Promise.reject(error)
   }
-);
+)
 
-// Fonction utilitaire pour définir le token après login
 export const setAuthToken = (token) => {
-  if (token) {
-    api.defaults.headers.common["Authorization"] = `Bearer ${token}`;
-    localStorage.setItem("token", token);
-    console.log("✅ Token défini dans les headers");
+  if (token && token !== 'undefined' && token !== 'null') {
+    localStorage.setItem('token', token)
+    api.defaults.headers.common['Authorization'] = `Bearer ${token}`
+    console.log('✅ Token défini dans les headers par défaut')
   } else {
-    delete api.defaults.headers.common["Authorization"];
-    localStorage.removeItem("token");
-    console.log("❌ Token retiré des headers");
+    delete api.defaults.headers.common['Authorization']
+    localStorage.removeItem('token')
+    console.log(' Token supprimé')
   }
-};
+}
 
-// Vérifier et restaurer le token au démarrage
-const initializeToken = () => {
-  const token = getToken();
-  if (token) {
-    setAuthToken(token);
-    console.log("✅ Token restauré au démarrage");
-    return true;
-  }
-  console.log("⚠️ Aucun token trouvé au démarrage");
-  return false;
-};
+const savedToken = localStorage.getItem('token')
+if (savedToken && savedToken !== 'undefined' && savedToken !== 'null') {
+  api.defaults.headers.common['Authorization'] = `Bearer ${savedToken}`
+  console.log('✅ Token initialisé au démarrage')
+} else {
+  console.log(' Aucun token trouvé au démarrage')
+}
 
-// Initialiser automatiquement
-initializeToken();
-
-export default api;
+export default api

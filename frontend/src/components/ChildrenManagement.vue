@@ -1,5 +1,205 @@
+<template>
+  <Layout>
+    <div class="children-container">
+      <!-- Notifications -->
+      <NotificationToast ref="toast" />
+      <ConfirmDialog ref="confirmDialog" />
+
+      <div class="page-header">
+        <div>
+          <h1 class="page-title">👶 Gestion des enfants</h1>
+          <p class="page-subtitle">
+            <span v-if="isParent">Gérez vos enfants et leurs professionnels assignés</span>
+            <span v-else-if="isTeacher">Gérez les enfants que vous avez ajoutés</span>
+            <span v-else-if="isPsychologist">Consultez les enfants qui vous sont assignés</span>
+          </p>
+        </div>
+        <button v-if="isParent || isTeacher" @click="openAddModal" class="btn-add" :disabled="loading">
+          <span class="btn-icon">➕</span>
+          Ajouter un enfant
+        </button>
+      </div>
+
+      <!-- Loading -->
+      <div v-if="loading && !children.length" class="loading-state">
+        <div class="spinner"></div>
+        <p>Chargement des enfants...</p>
+      </div>
+
+      <!-- Liste des enfants -->
+      <div v-else class="children-grid">
+        <div 
+          v-for="(child, index) in children" 
+          :key="child.id" 
+          class="child-card"
+          :style="{ animationDelay: getCardDelay(index) }"
+        >
+          <div class="card-header">
+            <div class="child-avatar" :style="{ background: `linear-gradient(135deg, #${Math.floor(Math.random()*16777215).toString(16)}, #${Math.floor(Math.random()*16777215).toString(16)})` }">
+              {{ child.name?.charAt(0) || '👶' }}
+            </div>
+            <div class="child-info">
+              <h3 class="child-name">{{ child.name }}</h3>
+              <p class="child-age">{{ child.age }} ans</p>
+            </div>
+            <div class="card-actions">
+              <button v-if="isParent || isTeacher" @click="openEditModal(child)" class="btn-icon" title="Modifier" :disabled="loading">
+                ✏️
+              </button>
+              <button v-if="isParent || isTeacher" @click="deleteChild(child)" class="btn-icon delete" title="Supprimer" :disabled="loading">
+                🗑️
+              </button>
+              <button @click="exportPDF(child.id)" class="btn-pdf" title="Exporter PDF" :disabled="isExporting(child.id)">
+                <span v-if="isExporting(child.id)" class="loading-spinner-small"></span>
+                <span v-else>📄</span>
+              </button>
+            </div>
+          </div>
+          
+          <div class="card-body">
+            <div class="info-row">
+              <span class="info-label">👨‍👩‍👧 Parent :</span>
+              <span class="info-value">{{ child.parent?.name || 'Non assigné' }}</span>
+            </div>
+            <div class="info-row">
+              <span class="info-label">👩‍⚕️ Psychologue :</span>
+              <span class="info-value">
+                <span class="psychologist-name">{{ child.psychologist?.name || 'Non assigné' }}</span>
+                <button v-if="child.psychologist && (isParent || isTeacher)" 
+                        @click="viewPsychologistInfo(child)" 
+                        class="btn-contact">
+                  📞 Contacter
+                </button>
+              </span>
+            </div>
+            <div class="info-row">
+              <span class="info-label">📚 Enseignant :</span>
+              <span class="info-value">{{ child.teacher?.name || 'Non assigné' }}</span>
+            </div>
+            <div v-if="child.notes && (isParent || isPsychologist || isTeacher)" class="info-row">
+              <span class="info-label">📝 Notes :</span>
+              <span class="info-value notes-value">{{ child.notes }}</span>
+            </div>
+            <div class="info-row">
+              <span class="info-label">📅 Créé le :</span>
+              <span class="info-value">{{ formatDate(child.createdAt || child.created_at) }}</span>
+            </div>
+          </div>
+          
+          <div class="card-footer">
+            <button @click="viewDetails(child)" class="btn-view" :disabled="loading">
+              📊 Voir détails
+            </button>
+            <button v-if="isPsychologist && child.parent" @click="messageParent(child)" class="btn-message" :disabled="loading">
+              💬 Message Parent
+            </button>
+          </div>
+        </div>
+
+        <!-- État vide -->
+        <div v-if="children.length === 0 && !loading" class="empty-state">
+          <div class="empty-icon">👶</div>
+          <h3>Aucun enfant trouvé</h3>
+          <p v-if="isParent">Cliquez sur "Ajouter un enfant" pour commencer</p>
+          <p v-else-if="isTeacher">Cliquez sur "Ajouter un enfant" pour ajouter des enfants</p>
+          <p v-else-if="isPsychologist">Aucun enfant ne vous est encore assigné</p>
+        </div>
+      </div>
+
+      <!-- Modal Add/Edit -->
+      <div v-if="showModal" class="modal-overlay" @click.self="closeModal">
+        <div class="modal">
+          <div class="modal-header">
+            <h2>{{ editingChild ? '✏️ Modifier' : '➕ Ajouter un enfant' }}</h2>
+            <button @click="closeModal" class="modal-close">✕</button>
+          </div>
+          
+          <div class="modal-body">
+            <div class="form-group">
+              <label>Nom de l'enfant *</label>
+              <input v-model="form.name" type="text" placeholder="Entrez le nom" class="form-input">
+            </div>
+            
+            <div class="form-group">
+              <label>Âge *</label>
+              <input v-model="form.age" type="number" min="1" max="18" placeholder="Âge" class="form-input">
+            </div>
+            
+            <div v-if="isTeacher" class="form-group">
+              <label>👨‍👩‍👧 Assigner un parent (optionnel)</label>
+              <select v-model="form.parent_id" class="form-select">
+                <option :value="null">— Aucun —</option>
+                <option v-for="parent in parents" :key="parent.id" :value="parent.id">
+                  {{ parent.name }} ({{ parent.email }})
+                </option>
+              </select>
+            </div>
+            
+            <div v-if="isTeacher || isParent" class="form-group">
+              <label>👩‍⚕️ Assigner un psychologue (optionnel)</label>
+              <select v-model="form.psychologist_id" class="form-select">
+                <option :value="null">— Aucun —</option>
+                <option v-for="psych in psychologists" :key="psych.id" :value="psych.id">
+                  {{ psych.name }} ({{ psych.email }})
+                </option>
+              </select>
+            </div>
+            
+            <div v-if="isParent" class="form-group">
+              <label>📚 Assigner un enseignant (optionnel)</label>
+              <select v-model="form.teacher_id" class="form-select">
+                <option :value="null">— Aucun —</option>
+                <option v-for="teacher in teachers" :key="teacher.id" :value="teacher.id">
+                  {{ teacher.name }} ({{ teacher.email }})
+                </option>
+              </select>
+            </div>
+            
+            <div class="form-group">
+              <label>Notes (optionnel)</label>
+              <textarea v-model="form.notes" rows="3" placeholder="Notes sur l'enfant..." class="form-textarea"></textarea>
+            </div>
+          </div>
+          
+          <div class="modal-footer">
+            <button @click="closeModal" class="btn-cancel">Annuler</button>
+            <button @click="saveChild" class="btn-save" :disabled="loading">
+              {{ loading ? 'Enregistrement...' : (editingChild ? 'Modifier' : 'Ajouter') }}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Modal Psychologist Info -->
+      <div v-if="showPsychologistModal" class="modal-overlay" @click.self="closeModal">
+        <div class="modal modal-small">
+          <div class="modal-header">
+            <h2>👩‍⚕️ Contact du psychologue</h2>
+            <button @click="closeModal" class="modal-close">✕</button>
+          </div>
+          <div class="modal-body" v-if="selectedPsychologist">
+            <div class="psychologist-info">
+              <div class="psychologist-avatar">
+                {{ selectedPsychologist.name?.charAt(0) || '👩‍⚕️' }}
+              </div>
+              <h3>{{ selectedPsychologist.name }}</h3>
+              <p class="psychologist-email">📧 {{ selectedPsychologist.email }}</p>
+              <div class="psychologist-actions">
+                <button @click="window.location.href = `mailto:${selectedPsychologist.email}`" class="btn-email">
+                  ✉️ Envoyer un email
+                </button>
+                <button @click="closeModal" class="btn-close-modal">Fermer</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </Layout>
+</template>
+
 <script setup>
-import { ref, onMounted, computed, nextTick, watch } from 'vue'
+import { ref, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'  
 import api from '@/api/api'
 import Layout from './Layout.vue'
@@ -8,6 +208,7 @@ import NotificationToast from './NotificationToast.vue'
 
 const router = useRouter()  
 
+// États
 const children = ref([])
 const psychologists = ref([])
 const teachers = ref([])
@@ -35,7 +236,7 @@ const form = ref({
   notes: ''
 })
 
-// Utilisateur connecté - Normalisation du rôle
+// Utilisateur connecté
 const user = computed(() => {
   const userData = JSON.parse(localStorage.getItem('user') || '{}')
   if (userData.role) {
@@ -59,14 +260,66 @@ const showNotification = (message, type = 'success', title = '') => {
   toast.value?.addNotification(type, title || titles[type] || 'Notification', message, 4000)
 }
 
+// Export PDF
+const exportPDF = async (childId) => {
+  if (exportingChildId.value) {
+    showNotification('Un export est déjà en cours...', 'warning')
+    return
+  }
+  
+  try {
+    exportingChildId.value = childId
+    loading.value = true
+    
+    const token = localStorage.getItem('token')
+    if (!token) {
+      throw new Error('Token d\'authentification manquant')
+    }
+    
+    const response = await api.get(`/export/child/${childId}`, {
+      responseType: 'blob',
+      headers: {
+        'Accept': 'application/pdf',
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
+      timeout: 60000
+    })
+    
+    const contentType = response.headers['content-type'] || ''
+    
+    if (contentType.includes('application/pdf')) {
+      const blob = new Blob([response.data], { type: 'application/pdf' })
+      const blobUrl = window.URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = blobUrl
+      link.setAttribute('download', `rapport_enfant_${childId}_${Date.now()}.pdf`)
+      document.body.appendChild(link)
+      link.click()
+      setTimeout(() => {
+        document.body.removeChild(link)
+        window.URL.revokeObjectURL(blobUrl)
+      }, 100)
+      showNotification('PDF exporté avec succès !', 'success')
+    } else {
+      throw new Error('Erreur lors de l\'export')
+    }
+  } catch (err) {
+    console.error('Erreur export PDF:', err)
+    showNotification('Erreur lors de l\'export du PDF', 'error')
+  } finally {
+    loading.value = false
+    exportingChildId.value = null
+  }
+}
+
 // Charger les enfants
 const loadChildren = async () => {
   try {
     loading.value = true
     const res = await api.get('/children')
-    children.value = [...res.data] // Utiliser spread pour forcer la réactivité
-    console.log('✅ Enfants chargés:', children.value)
-    await nextTick()
+    children.value = res.data
+    console.log('✅ Enfants chargés:', children.value.length)
   } catch (err) {
     console.error('Error loading children:', err)
     showNotification('Impossible de charger les enfants', 'error')
@@ -80,7 +333,6 @@ const loadPsychologists = async () => {
   try {
     const res = await api.get('/users/psychologists')
     psychologists.value = res.data
-    console.log('✅ Psychologues chargés:', psychologists.value)
   } catch (err) {
     console.error('Error loading psychologists:', err)
   }
@@ -91,7 +343,6 @@ const loadTeachers = async () => {
   try {
     const res = await api.get('/users/teachers')
     teachers.value = res.data
-    console.log('✅ Enseignants chargés:', teachers.value)
   } catch (err) {
     console.error('Error loading teachers:', err)
   }
@@ -102,7 +353,6 @@ const loadParents = async () => {
   try {
     const res = await api.get('/users/parents')
     parents.value = res.data
-    console.log('✅ Parents chargés:', parents.value)
   } catch (err) {
     console.error('Error loading parents:', err)
   }
@@ -121,12 +371,12 @@ const viewPsychologistInfo = async (child) => {
 
 // Envoyer un message au parent (pour psychologue)
 const messageParent = (child) => {
-  if (child.parentId && child.parentId > 0) {
+  if (child.parent && child.parent.id) {
     router.push({
       path: '/messages',
       query: {
-        contactId: child.parentId,
-        contactName: child.parentName,
+        contactId: child.parent.id,
+        contactName: child.parent.name,
         contactRole: 'parent'
       }
     })
@@ -171,13 +421,11 @@ const openEditModal = async (child) => {
   form.value = {
     name: child.name || '',
     age: child.age || '',
-    parent_id: child.parentId || '',
-    psychologist_id: child.psychologistId || '',
-    teacher_id: child.teacherId || '',
+    parent_id: child.parentId || child.parent_id || '',
+    psychologist_id: child.psychologistId || child.psychologist_id || '',
+    teacher_id: child.teacherId || child.teacher_id || '',
     notes: child.notes || ''
   }
-  
-  console.log('📝 Modal édition - Enfant:', child.name)
   showModal.value = true
 }
 
@@ -229,20 +477,20 @@ const saveChild = async () => {
     closeModal()
     await loadChildren()
   } catch (err) {
-    console.error('❌ Erreur:', err)
+    console.error(' Erreur:', err)
     showNotification(err.response?.data?.error || 'Erreur lors de l\'enregistrement', 'error')
   } finally {
     loading.value = false
   }
 }
 
-// Supprimer
+// Supprimer 
 const deleteChild = async (child) => {
   if (!isParent.value && !isTeacher.value) return
   
   const confirmed = await confirmDialog.value?.show({
     title: 'Supprimer un enfant',
-    message: `Êtes-vous sûr de vouloir supprimer "${child.name}" ?`,
+    message: `Êtes-vous sûr de vouloir supprimer "${child.name}" ? Toutes les données associées seront supprimées définitivement.`,
     type: 'danger',
     confirmText: 'Supprimer',
     cancelText: 'Annuler'
@@ -252,7 +500,7 @@ const deleteChild = async (child) => {
     try {
       loading.value = true
       await api.delete(`/children/${child.id}`)
-      showNotification(`"${child.name}" a été supprimé`, 'success')
+      showNotification(`"${child.name}" a été supprimé avec succès`, 'success')
       await loadChildren()
     } catch (err) {
       console.error('Erreur:', err)
@@ -263,6 +511,7 @@ const deleteChild = async (child) => {
   }
 }
 
+// Voir les détails
 const viewDetails = (child) => {
   router.push(`/child/${child.id}`)
 }
@@ -274,247 +523,71 @@ const formatDate = (date) => {
 
 const getCardDelay = (index) => `${index * 0.05}s`
 
-// Watch pour forcer le re-rendu quand les enfants changent
-watch(children, (newVal) => {
-  console.log('🔄 Children updated:', newVal?.length)
-  if (newVal && newVal.length > 0) {
-    console.log('Premier enfant:', {
-      name: newVal[0].name,
-      parentName: newVal[0].parentName,
-      psychologistName: newVal[0].psychologistName,
-      teacherName: newVal[0].teacherName
-    })
-  }
-}, { deep: true })
+const isExporting = (childId) => {
+  return exportingChildId.value === childId
+}
 
+// Initialisation
 onMounted(async () => {
   // Corriger le rôle dans localStorage si nécessaire
   const userData = JSON.parse(localStorage.getItem('user') || '{}')
   if (userData.role && userData.role !== userData.role.toLowerCase()) {
     userData.role = userData.role.toLowerCase()
     localStorage.setItem('user', JSON.stringify(userData))
-    console.log('✅ Rôle corrigé:', userData.role)
   }
   
-  await Promise.all([
-    loadChildren(),
-    loadPsychologists(),
-    loadTeachers()
-  ])
+  await loadChildren()
+  await loadPsychologists()
+  await loadTeachers()
   
   if (isTeacher.value) {
     await loadParents()
   }
   
-  console.log('🎯 Initialisation terminée - Enfants:', children.value.length)
+  console.log('🎯 Initialisation terminée')
+  console.log('   Rôle:', user.value?.role)
+  console.log('   Enfants:', children.value.length)
+  console.log('   Psychologues:', psychologists.value.length)
+  console.log('   Enseignants:', teachers.value.length)
 })
 </script>
 
-<template>
-  <Layout>
-    <div class="children-container">
-      <NotificationToast ref="toast" />
-      <ConfirmDialog ref="confirmDialog" />
-
-      <div class="page-header">
-        <div>
-          <h1 class="page-title">👶 Gestion des enfants</h1>
-          <p class="page-subtitle">
-            <span v-if="isParent">Gérez vos enfants et leurs professionnels assignés</span>
-            <span v-else-if="isTeacher">Gérez les enfants que vous avez ajoutés</span>
-            <span v-else-if="isPsychologist">Consultez les enfants qui vous sont assignés</span>
-          </p>
-        </div>
-        <button v-if="isParent || isTeacher" @click="openAddModal" class="btn-add" :disabled="loading">
-          <span class="btn-icon">➕</span>
-          Ajouter un enfant
-        </button>
-      </div>
-
-      <div v-if="loading && !children.length" class="loading-state">
-        <div class="spinner"></div>
-        <p>Chargement des enfants...</p>
-      </div>
-
-      <div v-else-if="children.length === 0" class="empty-state">
-        <div class="empty-icon">👶</div>
-        <h3>Aucun enfant trouvé</h3>
-        <p v-if="isParent">Cliquez sur "Ajouter un enfant" pour commencer</p>
-        <p v-else-if="isTeacher">Cliquez sur "Ajouter un enfant" pour ajouter des enfants</p>
-        <p v-else-if="isPsychologist">Aucun enfant ne vous est encore assigné</p>
-      </div>
-
-      <div v-else class="children-grid">
-        <div 
-          v-for="(child, index) in children" 
-          :key="child.id" 
-          class="child-card"
-          :style="{ animationDelay: getCardDelay(index) }"
-        >
-          <div class="card-header">
-            <div class="child-avatar">{{ child.name?.charAt(0) || '👶' }}</div>
-            <div class="child-info">
-              <h3 class="child-name">{{ child.name }}</h3>
-              <p class="child-age">{{ child.age }} ans</p>
-            </div>
-            <div class="card-actions">
-              <button v-if="isParent || isTeacher" @click="openEditModal(child)" class="btn-icon" title="Modifier">✏️</button>
-              <button v-if="isParent || isTeacher" @click="deleteChild(child)" class="btn-icon delete" title="Supprimer">🗑️</button>
-            </div>
-          </div>
-          
-          <div class="card-body">
-            <!-- Parent -->
-            <div class="info-row">
-              <span class="info-label">👨‍👩‍👧 Parent :</span>
-              <span class="info-value">
-                <strong v-if="child.parentName && child.parentName !== 'null' && child.parentName !== ''">
-                  {{ child.parentName }}
-                </strong>
-                <span v-else class="text-muted">Non assigné</span>
-              </span>
-            </div>
-            
-            <!-- Psychologue -->
-            <div class="info-row">
-              <span class="info-label">👩‍⚕️ Psychologue :</span>
-              <span class="info-value">
-                <span v-if="child.psychologistName && child.psychologistName !== 'null' && child.psychologistName !== ''">
-                  <span class="psychologist-name">{{ child.psychologistName }}</span>
-                  <button v-if="child.psychologistId" @click="viewPsychologistInfo(child)" class="btn-contact" title="Contacter">📞</button>
-                </span>
-                <span v-else class="text-muted">Non assigné</span>
-              </span>
-            </div>
-            
-            <!-- Enseignant -->
-            <div class="info-row">
-              <span class="info-label">📚 Enseignant :</span>
-              <span class="info-value">
-                <span v-if="child.teacherName && child.teacherName !== 'null' && child.teacherName !== ''">
-                  {{ child.teacherName }}
-                </span>
-                <span v-else class="text-muted">Non assigné</span>
-              </span>
-            </div>
-            
-            <!-- Notes -->
-            <div v-if="child.notes && child.notes !== 'null' && child.notes !== ''" class="info-row">
-              <span class="info-label">📝 Notes :</span>
-              <span class="info-value notes-value">{{ child.notes }}</span>
-            </div>
-            
-            <!-- Date -->
-            <div class="info-row">
-              <span class="info-label">📅 Créé le :</span>
-              <span class="info-value">
-                <span v-if="child.createdAt">{{ formatDate(child.createdAt) }}</span>
-                <span v-else class="text-muted">N/A</span>
-              </span>
-            </div>
-          </div>
-          
-          <div class="card-footer">
-            <button @click="viewDetails(child)" class="btn-view">📊 Voir détails</button>
-            <button v-if="isPsychologist && child.parentId" @click="messageParent(child)" class="btn-message">💬 Message Parent</button>
-          </div>
-        </div>
-      </div>
-
-      <!-- Modal Add/Edit -->
-      <div v-if="showModal" class="modal-overlay" @click.self="closeModal">
-        <div class="modal">
-          <div class="modal-header">
-            <h2>{{ editingChild ? '✏️ Modifier' : '➕ Ajouter un enfant' }}</h2>
-            <button @click="closeModal" class="modal-close">✕</button>
-          </div>
-          
-          <div class="modal-body">
-            <div class="form-group">
-              <label>Nom de l'enfant *</label>
-              <input v-model="form.name" type="text" class="form-input" placeholder="Entrez le nom">
-            </div>
-            
-            <div class="form-group">
-              <label>Âge *</label>
-              <input v-model="form.age" type="number" min="1" max="18" class="form-input" placeholder="Âge">
-            </div>
-            
-            <div class="form-group">
-              <label>👩‍⚕️ Psychologue</label>
-              <select v-model="form.psychologist_id" class="form-select">
-                <option :value="null">— Aucun —</option>
-                <option v-for="psych in psychologists" :key="psych.id" :value="psych.id">
-                  {{ psych.name }} ({{ psych.email }})
-                </option>
-              </select>
-            </div>
-            
-            <div class="form-group">
-              <label>📚 Enseignant</label>
-              <select v-model="form.teacher_id" class="form-select">
-                <option :value="null">— Aucun —</option>
-                <option v-for="teacher in teachers" :key="teacher.id" :value="teacher.id">
-                  {{ teacher.name }} ({{ teacher.email }})
-                </option>
-              </select>
-            </div>
-            
-            <div v-if="isTeacher" class="form-group">
-              <label>👨‍👩‍👧 Parent</label>
-              <select v-model="form.parent_id" class="form-select">
-                <option :value="null">— Aucun —</option>
-                <option v-for="parent in parents" :key="parent.id" :value="parent.id">
-                  {{ parent.name }} ({{ parent.email }})
-                </option>
-              </select>
-            </div>
-            
-            <div class="form-group">
-              <label>Notes (optionnel)</label>
-              <textarea v-model="form.notes" rows="3" class="form-textarea" placeholder="Notes sur l'enfant..."></textarea>
-            </div>
-          </div>
-          
-          <div class="modal-footer">
-            <button @click="closeModal" class="btn-cancel">Annuler</button>
-            <button @click="saveChild" class="btn-save" :disabled="loading">
-              {{ loading ? 'Enregistrement...' : (editingChild ? 'Modifier' : 'Ajouter') }}
-            </button>
-          </div>
-        </div>
-      </div>
-
-      <!-- Modal Psychologist Info -->
-      <div v-if="showPsychologistModal" class="modal-overlay" @click.self="closeModal">
-        <div class="modal modal-small">
-          <div class="modal-header">
-            <h2>👩‍⚕️ Contact du psychologue</h2>
-            <button @click="closeModal" class="modal-close">✕</button>
-          </div>
-          <div class="modal-body" v-if="selectedPsychologist">
-            <div class="psychologist-info">
-              <div class="psychologist-avatar">{{ selectedPsychologist.name?.charAt(0) || '👩‍⚕️' }}</div>
-              <h3>{{ selectedPsychologist.name }}</h3>
-              <p class="psychologist-email">📧 {{ selectedPsychologist.email }}</p>
-              <div class="psychologist-actions">
-                <button @click="window.location.href = `mailto:${selectedPsychologist.email}`" class="btn-email">✉️ Envoyer un email</button>
-                <button @click="closeModal" class="btn-close-modal">Fermer</button>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  </Layout>
-</template>
-
 <style scoped>
-/* Tes styles existants restent identiques */
+.loading-spinner-small {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  border: 2px solid #f3f3f3;
+  border-top: 2px solid #ef4444;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+.btn-pdf:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
 .children-container {
   max-width: 1200px;
   margin: 0 auto;
   padding: 30px 20px;
+}
+
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(30px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .page-header {
@@ -555,9 +628,14 @@ onMounted(async () => {
   gap: 8px;
 }
 
-.btn-add:hover {
+.btn-add:hover:not(:disabled) {
   transform: translateY(-2px);
   box-shadow: 0 8px 20px rgba(26, 10, 46, 0.3);
+}
+
+.btn-add:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 .loading-state {
@@ -575,10 +653,6 @@ onMounted(async () => {
   margin: 0 auto 20px;
 }
 
-@keyframes spin {
-  to { transform: rotate(360deg); }
-}
-
 .children-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
@@ -590,17 +664,12 @@ onMounted(async () => {
   border-radius: 20px;
   overflow: hidden;
   box-shadow: 0 4px 15px rgba(0, 0, 0, 0.08);
-  transition: all 0.3s;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   animation: fadeInUp 0.5s ease both;
 }
 
-@keyframes fadeInUp {
-  from { opacity: 0; transform: translateY(30px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-
 .child-card:hover {
-  transform: translateY(-5px);
+  transform: translateY(-5px) scale(1.02);
   box-shadow: 0 12px 30px rgba(0, 0, 0, 0.12);
 }
 
@@ -616,7 +685,6 @@ onMounted(async () => {
 .child-avatar {
   width: 55px;
   height: 55px;
-  background: linear-gradient(135deg, #1a0a2e, #2d1b4e);
   border-radius: 50%;
   display: flex;
   align-items: center;
@@ -624,6 +692,11 @@ onMounted(async () => {
   font-size: 28px;
   font-weight: 700;
   color: white;
+  transition: transform 0.3s;
+}
+
+.child-card:hover .child-avatar {
+  transform: scale(1.05);
 }
 
 .child-info {
@@ -647,7 +720,7 @@ onMounted(async () => {
   gap: 8px;
 }
 
-.btn-icon {
+.btn-icon, .btn-pdf {
   background: none;
   border: none;
   font-size: 18px;
@@ -657,14 +730,23 @@ onMounted(async () => {
   transition: all 0.2s;
 }
 
-.btn-icon:hover {
+.btn-icon:hover:not(:disabled) {
   background: rgba(0, 0, 0, 0.05);
   transform: scale(1.1);
 }
 
-.btn-icon.delete:hover {
+.btn-icon.delete:hover:not(:disabled) {
   background: #fee2e2;
   color: #ef4444;
+}
+
+.btn-pdf {
+  color: #ef4444;
+}
+
+.btn-pdf:hover:not(:disabled) {
+  background: #fee2e2;
+  transform: scale(1.1);
 }
 
 .card-body {
@@ -677,6 +759,12 @@ onMounted(async () => {
   align-items: center;
   padding: 10px 0;
   border-bottom: 1px solid #f3f4f6;
+  transition: background 0.2s;
+}
+
+.info-row:hover {
+  background: #f9fafb;
+  padding-left: 8px;
 }
 
 .info-row:last-child {
@@ -718,8 +806,8 @@ onMounted(async () => {
   border: none;
   color: #4f46e5;
   cursor: pointer;
-  font-size: 14px;
-  padding: 4px 8px;
+  font-size: 11px;
+  padding: 4px 10px;
   border-radius: 20px;
   background: #eef2ff;
   transition: all 0.2s;
@@ -727,7 +815,7 @@ onMounted(async () => {
 
 .btn-contact:hover {
   background: #e0e7ff;
-  transform: scale(1.05);
+  transform: scale(1.02);
 }
 
 .card-footer {
@@ -748,12 +836,17 @@ onMounted(async () => {
   transition: all 0.2s;
 }
 
+.btn-view:disabled, .btn-message:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
 .btn-view {
   background: linear-gradient(135deg, #1a0a2e, #2d1b4e);
   color: white;
 }
 
-.btn-view:hover {
+.btn-view:hover:not(:disabled) {
   transform: translateY(-2px);
   box-shadow: 0 4px 12px rgba(26, 10, 46, 0.3);
 }
@@ -763,7 +856,7 @@ onMounted(async () => {
   color: #4f46e5;
 }
 
-.btn-message:hover {
+.btn-message:hover:not(:disabled) {
   background: #e0e7ff;
   transform: translateY(-2px);
 }
@@ -773,16 +866,13 @@ onMounted(async () => {
   padding: 60px;
   background: white;
   border-radius: 20px;
+  animation: fadeInUp 0.5s ease;
 }
 
 .empty-icon {
   font-size: 64px;
   margin-bottom: 16px;
   opacity: 0.5;
-}
-
-.text-muted {
-  color: #9ca3af;
 }
 
 .modal-overlay {
@@ -797,6 +887,12 @@ onMounted(async () => {
   align-items: center;
   justify-content: center;
   z-index: 1000;
+  animation: fadeIn 0.2s ease;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
 .modal {
@@ -806,6 +902,22 @@ onMounted(async () => {
   max-width: 500px;
   max-height: 90vh;
   overflow-y: auto;
+  animation: slideUp 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(30px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.modal-small {
+  max-width: 400px;
 }
 
 .modal-header {
@@ -827,9 +939,11 @@ onMounted(async () => {
   font-size: 24px;
   cursor: pointer;
   color: #9ca3af;
+  transition: all 0.2s;
 }
 
 .modal-close:hover {
+  transform: scale(1.1);
   color: #ef4444;
 }
 
@@ -861,6 +975,7 @@ onMounted(async () => {
 .form-input:focus, .form-select:focus, .form-textarea:focus {
   outline: none;
   border-color: #1a0a2e;
+  box-shadow: 0 0 0 3px rgba(26, 10, 46, 0.1);
 }
 
 .modal-footer {
@@ -877,6 +992,7 @@ onMounted(async () => {
   border-radius: 40px;
   font-weight: 600;
   cursor: pointer;
+  transition: all 0.2s;
 }
 
 .btn-cancel {
@@ -905,7 +1021,7 @@ onMounted(async () => {
 
 .psychologist-info {
   text-align: center;
-  padding: 24px;
+  padding: 20px;
 }
 
 .psychologist-avatar {
@@ -919,6 +1035,12 @@ onMounted(async () => {
   font-size: 40px;
   margin: 0 auto 16px;
   color: white;
+  animation: scaleIn 0.3s ease;
+}
+
+@keyframes scaleIn {
+  from { transform: scale(0); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
 }
 
 .psychologist-info h3 {
@@ -943,6 +1065,7 @@ onMounted(async () => {
   border-radius: 30px;
   font-weight: 600;
   cursor: pointer;
+  transition: all 0.2s;
 }
 
 .btn-email {

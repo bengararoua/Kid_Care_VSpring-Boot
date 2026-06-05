@@ -11,6 +11,14 @@
           <span v-if="notification.type === 'success'">✓</span>
           <span v-else-if="notification.type === 'error'">⚠️</span>
           <span v-else-if="notification.type === 'warning'">⚠️</span>
+          <span v-else-if="notification.type === 'note_added'">📝</span>
+          <span v-else-if="notification.type === 'recommendation_added'">🎯</span>
+          <span v-else-if="notification.type === 'recommendation_completed'">✅</span>
+          <span v-else-if="notification.type === 'reminder'">⏰</span>
+          <span v-else-if="notification.type === 'message'">💬</span>
+          <span v-else-if="notification.type === 'milestone'">🎉</span>
+          <span v-else-if="notification.type === 'new_behavior_log'">📊</span>
+          <span v-else-if="notification.type === 'behavior_alert'">⚠️</span>
           <span v-else>ℹ️</span>
         </div>
         <div class="toast-content">
@@ -48,7 +56,6 @@ const removeNotification = (id) => {
   }
 }
 
-// Exposer les méthodes
 defineExpose({ addNotification })
 </script>
 
@@ -99,6 +106,70 @@ defineExpose({ addNotification })
 .toast.warning .toast-icon {
   background: #fef3c7;
   color: #92400e;
+}
+
+.toast.note_added {
+  border-left-color: #8b5cf6;
+}
+.toast.note_added .toast-icon {
+  background: #ede9fe;
+  color: #6d28d9;
+}
+
+.toast.recommendation_added {
+  border-left-color: #f59e0b;
+}
+.toast.recommendation_added .toast-icon {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.toast.recommendation_completed {
+  border-left-color: #10b981;
+}
+.toast.recommendation_completed .toast-icon {
+  background: #d1fae5;
+  color: #065f46;
+}
+
+.toast.reminder {
+  border-left-color: #f59e0b;
+}
+.toast.reminder .toast-icon {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.toast.message {
+  border-left-color: #3b82f6;
+}
+.toast.message .toast-icon {
+  background: #dbeafe;
+  color: #1e40af;
+}
+
+.toast.milestone {
+  border-left-color: #ec4899;
+}
+.toast.milestone .toast-icon {
+  background: #fce7f3;
+  color: #be185d;
+}
+
+.toast.new_behavior_log {
+  border-left-color: #8b5cf6;
+}
+.toast.new_behavior_log .toast-icon {
+  background: #ede9fe;
+  color: #6d28d9;
+}
+
+.toast.behavior_alert {
+  border-left-color: #ef4444;
+}
+.toast.behavior_alert .toast-icon {
+  background: #fee2e2;
+  color: #991b1b;
 }
 
 .toast.info {

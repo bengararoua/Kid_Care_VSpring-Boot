@@ -1,57 +1,37 @@
 <script setup>
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import axios from 'axios'
+import api from '@/api/api'
 import Layout from '@/layouts/Layout.vue' 
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import NotificationToast from '@/components/NotificationToast.vue'
 
 const router = useRouter()
 
-// Références pour les notifications
 const toast = ref(null)
 const confirmDialog = ref(null)
 
-const user = computed(() => {
-  const userData = localStorage.getItem('user')
-  if (userData) {
-    return JSON.parse(userData)
-  }
-  return {}
-})
-
+const user = ref({})
 const loading = ref(false)
-const success = ref('')
-const error = ref('')
 
-// Profile form
 const profileForm = ref({
   name: '',
   email: ''
 })
 
-// Password form
 const passwordForm = ref({
   current_password: '',
   password: '',
   password_confirmation: ''
 })
 
-// Active tab
 const activeTab = ref('profile')
 
-// Notifications
 const showNotification = (message, type = 'success', title = '') => {
-  const titles = {
-    success: 'Succès',
-    error: 'Erreur',
-    warning: 'Attention',
-    info: 'Information'
-  }
+  const titles = { success: 'Succès', error: 'Erreur', warning: 'Attention', info: 'Information' }
   toast.value?.addNotification(type, title || titles[type] || 'Notification', message, 4000)
 }
 
-// Formater la date d'inscription
 const formatMemberSince = (date) => {
   if (!date) return 'Nouveau membre'
   const d = new Date(date)
@@ -62,27 +42,39 @@ const formatMemberSince = (date) => {
   })
 }
 
-// Load user data
-onMounted(() => {
-  profileForm.value.name = user.value.name || ''
-  profileForm.value.email = user.value.email || ''
-})
-
-// Update profile
-const updateProfile = async () => {
-  error.value = ''
-  success.value = ''
-  loading.value = true
-
+const loadUser = async () => {
   try {
-    const response = await axios.put('/api/profile', {
+    const response = await api.get('/me')
+    user.value = response.data
+    profileForm.value.name = user.value.name || ''
+    profileForm.value.email = user.value.email || ''
+    localStorage.setItem('user', JSON.stringify(user.value))
+  } catch (err) {
+    console.error('Erreur chargement utilisateur:', err)
+    showNotification('Impossible de charger les informations utilisateur', 'error')
+  }
+}
+
+const getAuthConfig = () => {
+  const token = localStorage.getItem('token')
+  return {
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/json'
+    }
+  }
+}
+
+const updateProfile = async () => {
+  loading.value = true
+  try {
+    const response = await api.put('/profile', {
       name: profileForm.value.name,
       email: profileForm.value.email
-    })
-
-    const updatedUser = { ...user.value, name: response.data.name, email: response.data.email }
-    localStorage.setItem('user', JSON.stringify(updatedUser))
+    }, getAuthConfig())
     
+    user.value = response.data
+    localStorage.setItem('user', JSON.stringify(response.data))
     showNotification('Profil mis à jour avec succès !', 'success')
   } catch (err) {
     showNotification(err.response?.data?.error || 'Erreur lors de la mise à jour', 'error')
@@ -91,11 +83,7 @@ const updateProfile = async () => {
   }
 }
 
-// Update password
 const updatePassword = async () => {
-  error.value = ''
-  success.value = ''
-  
   if (passwordForm.value.password !== passwordForm.value.password_confirmation) {
     showNotification('Les nouveaux mots de passe ne correspondent pas', 'error')
     return
@@ -109,49 +97,47 @@ const updatePassword = async () => {
   loading.value = true
 
   try {
-    await axios.put('/api/password', {
+    await api.put('/password', {
       current_password: passwordForm.value.current_password,
       password: passwordForm.value.password,
       password_confirmation: passwordForm.value.password_confirmation
-    })
+    }, getAuthConfig())
 
-    showNotification('Mot de passe mis à jour avec succès !', 'success')
-    passwordForm.value = {
-      current_password: '',
-      password: '',
-      password_confirmation: ''
-    }
+    showNotification('Mot de passe mis à jour avec succès ! Veuillez vous reconnecter avec votre nouveau mot de passe.', 'success')
+    
+    setTimeout(() => {
+      localStorage.removeItem('token')
+      localStorage.removeItem('user')
+      router.push('/login')
+    }, 2000)
   } catch (err) {
-    showNotification(err.response?.data?.error || 'Erreur lors de la mise à jour', 'error')
+    const errorMsg = err.response?.data?.error || 'Erreur lors de la mise à jour du mot de passe'
+    showNotification(errorMsg, 'error')
   } finally {
     loading.value = false
   }
 }
 
-// Delete account with confirmation dialog - CORRIGÉ
 const deleteAccount = async () => {
-  // Première confirmation
   const confirmed = await confirmDialog.value?.show({
     title: 'Supprimer mon compte',
-    message: '⚠️ Attention : Cette action est irréversible ! Toutes vos données seront supprimées définitivement. Êtes-vous absolument sûr ?',
+    message: '⚠️ Attention : Cette action est irréversible !',
     type: 'danger',
-    confirmText: 'Supprimer définitivement',
+    confirmText: 'Supprimer',
     cancelText: 'Annuler'
   })
   
   if (!confirmed) return
 
-  // Demander le mot de passe pour confirmation
   const passwordResult = await confirmDialog.value?.show({
-    title: 'Confirmation par mot de passe',
-    message: 'Veuillez confirmer la suppression de votre compte en saisissant votre mot de passe ci-dessous :',
+    title: 'Confirmation',
+    message: 'Entrez votre mot de passe :',
     type: 'warning',
-    confirmText: 'Confirmer la suppression',
+    confirmText: 'Confirmer',
     cancelText: 'Annuler',
     showPasswordInput: true
   })
   
-  // Vérifier que l'utilisateur a confirmé ET qu'un mot de passe a été saisi
   if (!passwordResult || !passwordResult.confirmed || !passwordResult.password) {
     showNotification('Suppression annulée', 'info')
     return
@@ -160,31 +146,32 @@ const deleteAccount = async () => {
   loading.value = true
 
   try {
-    // Envoyer le mot de passe dans le corps de la requête
-    const response = await axios.post('/api/profile/delete', {
-      password: passwordResult.password
-    })
+    const config = {
+      headers: {
+        'Authorization': `Bearer ${localStorage.getItem('token')}`,
+        'Content-Type': 'application/json'
+      },
+      data: { password: passwordResult.password }
+    }
     
-    showNotification('Votre compte a été supprimé avec succès', 'success')
+    const response = await api.delete('/profile/delete', config)
+    
+    console.log('Réponse:', response.data)
+    showNotification('Compte supprimé avec succès', 'success')
     
     setTimeout(() => {
       localStorage.removeItem('token')
       localStorage.removeItem('user')
-      delete axios.defaults.headers.common['Authorization']
-      router.push('/')
+      router.push('/login')
     }, 1500)
   } catch (err) {
-    console.error('Erreur suppression:', err)
-    
-    if (err.response?.data?.error) {
-      showNotification(err.response.data.error, 'error')
-    } else {
-      showNotification('Erreur lors de la suppression du compte', 'error')
-    }
+    console.error('Erreur:', err)
+    const errorMsg = err.response?.data?.error || err.response?.data?.message || 'Erreur lors de la suppression'
+    showNotification(errorMsg, 'error')
+  } finally {
     loading.value = false
   }
 }
-
 const getRoleIcon = (role) => {
   switch(role) {
     case 'parent': return '👨‍👩‍👧'
@@ -193,12 +180,24 @@ const getRoleIcon = (role) => {
     default: return '👤'
   }
 }
+
+const getRoleText = (role) => {
+  switch(role) {
+    case 'parent': return 'Parent'
+    case 'teacher': return 'Enseignant'
+    case 'psychologist': return 'Psychologue'
+    default: return role
+  }
+}
+
+onMounted(() => {
+  loadUser()
+})
 </script>
 
 <template>
   <Layout>
     <div class="profile-container">
-      <!-- Notifications -->
       <NotificationToast ref="toast" />
       <ConfirmDialog ref="confirmDialog" />
 
@@ -214,7 +213,7 @@ const getRoleIcon = (role) => {
               {{ user.name?.charAt(0)?.toUpperCase() || '👤' }}
             </div>
             <h3 class="avatar-name">{{ user.name }}</h3>
-            <p class="avatar-role">{{ getRoleIcon(user.role) }} {{ user.role === 'parent' ? 'Parent' : (user.role === 'teacher' ? 'Enseignant' : 'Psychologue') }}</p>
+            <p class="avatar-role">{{ getRoleIcon(user.role) }} {{ getRoleText(user.role) }}</p>
             <p class="avatar-email">{{ user.email }}</p>
           </div>
 
@@ -223,7 +222,14 @@ const getRoleIcon = (role) => {
               <span class="stat-icon">📅</span>
               <div>
                 <div class="stat-label">Membre depuis</div>
-                <div class="stat-value">{{ formatMemberSince(user.created_at) }}</div>
+                <div class="stat-value">{{ formatMemberSince(user.createdAt) }}</div>
+              </div>
+            </div>
+            <div v-if="user.role === 'parent'" class="stat-item">
+              <span class="stat-icon">⭐</span>
+              <div>
+                <div class="stat-label">Points</div>
+                <div class="stat-value">{{ user.points || 0 }} points</div>
               </div>
             </div>
           </div>
@@ -254,7 +260,7 @@ const getRoleIcon = (role) => {
               </div>
               <div class="form-group">
                 <label>Rôle</label>
-                <input :value="user.role === 'parent' ? 'Parent' : (user.role === 'teacher' ? 'Enseignant' : 'Psychologue')" type="text" class="form-input" disabled>
+                <input :value="getRoleText(user.role)" type="text" class="form-input" disabled>
                 <small class="form-hint">Le rôle ne peut pas être modifié</small>
               </div>
               <button type="submit" class="btn-save" :disabled="loading">

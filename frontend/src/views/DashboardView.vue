@@ -4,9 +4,18 @@
       <NotificationToast ref="toast" />
       <ConfirmDialog ref="confirmDialog" />
 
+      <!-- Modal Météo des émotions après Save Log -->
+      <LogSuccessModal
+        :show="showLogSuccessModal"
+        :logData="lastLogData"
+        :childName="selectedChild?.name"
+        :moodStats="getMoodStatsFromLogs()"
+        @close="showLogSuccessModal = false"
+      />
+
       <div class="hero-section">
         <div class="hero-content">
-          <h1 class="hero-title">👋 Welcome back, {{ userName }} 
+          <h1 class="hero-title">👋 Welcome back, {{ userName }}
             <span style="font-size: 0.7em; opacity: 0.8;">
               ({{ userRole === 'parent' ? 'Parent' : (userRole === 'teacher' ? 'Teacher' : (userRole === 'psychologist' ? 'Psychologist' : 'User')) }})
             </span>
@@ -39,6 +48,9 @@
                 {{ child.name }} · {{ child.age }} years old
               </option>
             </select>
+            <button v-if="selectedChild" @click="openBehavioralTest" class="btn-test">
+              🧪 Test comportemental
+            </button>
           </div>
 
           <div class="stats-grid">
@@ -92,7 +104,7 @@
             </div>
           </div>
 
-          <!-- 🌤️ Météo des émotions -->
+          <!-- Météo des émotions (dashboard permanent) -->
           <div class="emotion-weather-card" v-if="logs.length > 0">
             <h3>🌤️ Météo des émotions</h3>
             <div class="emotion-grid">
@@ -101,18 +113,18 @@
                 <div class="emotion-name">{{ moodName }}</div>
                 <div class="emotion-count">{{ count }}x</div>
                 <div class="emotion-bar">
-                  <div class="emotion-fill" :style="{ 
-                    width: (count / Math.max(...Object.values(getMoodStats()), 1)) * 100 + '%', 
-                    background: getMoodColor(moodName) 
+                  <div class="emotion-fill" :style="{
+                    width: (count / Math.max(...Object.values(getMoodStats()), 1)) * 100 + '%',
+                    background: getMoodColor(moodName)
                   }"></div>
                 </div>
               </div>
             </div>
             <div class="emotion-message">
-              <span v-if="getMostCommonMood().includes('happy')">🌟 Super journée ! Continuez ainsi !</span>
+              <span v-if="getMostCommonMood().includes('happy')">🌟 Super journee ! Continuez ainsi !</span>
               <span v-else-if="getMostCommonMood().includes('sad')">💪 Un petit coup de mou, c'est normal</span>
               <span v-else-if="getMostCommonMood().includes('angry')">😤 Besoin de calme ? Essayez un jeu relaxant</span>
-              <span v-else-if="getMostCommonMood().includes('anxious')">😰 Rassurez-le avec des câlins et de la douceur</span>
+              <span v-else-if="getMostCommonMood().includes('anxious')">😰 Rassurez-le avec des calins et de la douceur</span>
               <span v-else>🎯 Gardez le rythme !</span>
             </div>
           </div>
@@ -174,7 +186,9 @@
                     <textarea v-model="note" class="form-textarea" rows="2" placeholder="Any observations..."></textarea>
                   </div>
                 </div>
-                <button @click="addLog" class="save-btn">💾 Save Log</button>
+                <button @click="addLog" class="save-btn" :disabled="savingLog">
+                  {{ savingLog ? '⏳ Saving...' : '💾 Save Log' }}
+                </button>
               </div>
             </transition>
           </div>
@@ -294,11 +308,11 @@
                 </thead>
                 <tbody>
                   <tr v-for="log in logs.slice(0, 8)" :key="log.id">
-                    <td class="log-date">{{ formatDate(log.log_date) }}</td>
+                    <td class="log-date">{{ formatDate(log.logDate || log.log_date) }}</td>
                     <td>
                       <div class="focus-indicator">
-                        <div class="focus-bar" :style="{ width: (log.focus_level/5)*100 + '%' }"></div>
-                        <span class="focus-value">{{ log.focus_level }}/5</span>
+                        <div class="focus-bar" :style="{ width: ((log.focusLevel || log.focus_level)/5)*100 + '%' }"></div>
+                        <span class="focus-value">{{ log.focusLevel || log.focus_level }}/5</span>
                       </div>
                     </td>
                     <td>
@@ -306,10 +320,10 @@
                         {{ getMoodEmoji(log.mood) }} {{ log.mood }}
                       </span>
                     </td>
-                    <td><span class="sleep-value">{{ log.sleep_hours }}h</span></td>
+                    <td><span class="sleep-value">{{ log.sleepHours || log.sleep_hours }}h</span></td>
                     <td>
                       <div class="social-stars">
-                        <span v-for="i in 5" :key="i" class="small-star" :class="{ filled: i <= log.social_interaction }">★</span>
+                        <span v-for="i in 5" :key="i" class="small-star" :class="{ filled: i <= (log.socialInteraction || log.social_interaction) }">★</span>
                       </div>
                     </td>
                   </tr>
@@ -326,17 +340,27 @@
         </div>
       </div>
     </div>
+
+    <!-- Modal Test Comportemental -->
+    <div v-if="showBehavioralTest" class="test-modal-overlay" @click.self="showBehavioralTest = false">
+      <div class="test-modal">
+        <button class="test-modal-close" @click="showBehavioralTest = false">✕</button>
+        <BehavioralTest :child="selectedChild" @close="showBehavioralTest = false" />
+      </div>
+    </div>
   </Layout>
 </template>
 
 <script setup>
-import { ref, onMounted, computed, watch } from 'vue'
+import { ref, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import api from '@/api/api'
 import Layout from '@/layouts/Layout.vue'
 import ChartComponent from '@/components/ChartComponent.vue'
 import NotificationToast from '@/components/NotificationToast.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
+import LogSuccessModal from '@/components/LogSuccessModal.vue'
+import BehavioralTest from '@/components/BehavioralTest.vue'
 
 const router = useRouter()
 const children = ref([])
@@ -349,6 +373,12 @@ const userPoints = ref(0)
 const loading = ref(false)
 const error = ref(null)
 const showLogForm = ref(false)
+const savingLog = ref(false)
+const showBehavioralTest = ref(false)
+
+// LogSuccessModal state
+const showLogSuccessModal = ref(false)
+const lastLogData = ref({})
 
 // Form data
 const focus = ref(3)
@@ -361,7 +391,7 @@ const note = ref('')
 const toast = ref(null)
 const confirmDialog = ref(null)
 
-const showSuccess = (message, title = 'Succès') => {
+const showSuccess = (message, title = 'Succes') => {
   toast.value?.addNotification('success', title, message, 4000)
 }
 
@@ -377,13 +407,24 @@ const showWarning = (message, title = 'Attention') => {
   toast.value?.addNotification('warning', title, message, 4000)
 }
 
+// ==================== FONCTIONS ====================
+const getMoodStatsFromLogs = () => {
+  if (!logs.value.length) return {}
+  const moodCount = {}
+  logs.value.slice(0, 10).forEach(log => {
+    const moodName = log.mood
+    moodCount[moodName] = (moodCount[moodName] || 0) + 1
+  })
+  return moodCount
+}
+
 const loadUserData = () => {
   const userData = localStorage.getItem('user')
   if (userData) {
     try {
       const user = JSON.parse(userData)
       userName.value = user.name || ''
-      userRole.value = user.role || 'parent'
+      userRole.value = (user.role || 'parent').toLowerCase()
     } catch(e) {}
   }
 }
@@ -403,13 +444,13 @@ const loadChildren = async () => {
     error.value = null
     const res = await api.get('/children')
     children.value = res.data || []
-    
+
     if (children.value.length > 0) {
       selectedChild.value = children.value[0]
       await loadData()
-      showSuccess(`${children.value.length} enfant(s) chargé(s)`, 'Chargement réussi')
+      showSuccess(`${children.value.length} enfant(s) charge(s)`, 'Chargement reussi')
     } else {
-      showInfo('Aucun enfant enregistré. Ajoutez votre premier enfant !', 'Bienvenue')
+      showInfo('Aucun enfant enregistre. Ajoutez votre premier enfant !', 'Bienvenue')
     }
   } catch (err) {
     console.error('Error loading children:', err)
@@ -422,22 +463,17 @@ const loadChildren = async () => {
 
 const loadData = async () => {
   if (!selectedChild.value || !selectedChild.value.id) return
-  
   try {
-    await Promise.all([
-      loadInsights(),
-      loadLogs()
-    ])
+    await Promise.all([loadInsights(), loadLogs()])
   } catch (err) {
     console.error('Error loading data:', err)
-    showError('Erreur lors du chargement des données', 'Erreur')
+    showError('Erreur lors du chargement des donnees', 'Erreur')
   }
 }
 
 const loadInsights = async () => {
   const childId = selectedChild.value.id
   if (!childId) return
-  
   try {
     const res = await api.get(`/insights/${childId}`)
     insights.value = res.data
@@ -450,15 +486,17 @@ const loadInsights = async () => {
 const loadLogs = async () => {
   const childId = selectedChild.value.id
   if (!childId) return
-  
   try {
     const res = await api.get(`/logs/${childId}`)
     logs.value = res.data || []
-    
-    const today = new Date().toDateString()
-    const loggedToday = logs.value.some(log => new Date(log.log_date).toDateString() === today)
+
+    const today = new Date().toISOString().split('T')[0]
+    const loggedToday = logs.value.some(log => {
+      const logDate = log.logDate || log.log_date
+      return logDate === today
+    })
     if (!loggedToday && logs.value.length > 0) {
-      showInfo('Aucun log enregistré aujourd\'hui. Pensez à ajouter une observation !', 'Rappel')
+      showInfo('Aucun log enregistre aujourd\'hui. Pensez a ajouter une observation !', 'Rappel')
     }
   } catch (err) {
     console.error('Error loading logs:', err)
@@ -466,138 +504,111 @@ const loadLogs = async () => {
   }
 }
 
-const addLog = async () => {
-  if (!selectedChild.value || !selectedChild.value.id) {
-    showWarning('Veuillez sélectionner un enfant d\'abord', 'Action requise')
+const openBehavioralTest = () => {
+  if (!selectedChild.value) {
+    showWarning('Veuillez selectionner un enfant d\'abord', 'Action requise')
     return
   }
-  
+  showBehavioralTest.value = true
+}
+
+const addLog = async () => {
+  if (!selectedChild.value || !selectedChild.value.id) {
+    showWarning('Veuillez selectionner un enfant d\'abord', 'Action requise')
+    return
+  }
+
+  const focusInt = parseInt(focus.value)
+  const sleepFloat = parseFloat(sleep.value)
+  const socialInt = parseInt(social.value)
+
+  if (isNaN(focusInt) || focusInt < 1 || focusInt > 5) {
+    showError('Le focus doit etre entre 1 et 5', 'Erreur de validation')
+    return
+  }
+  if (isNaN(sleepFloat) || sleepFloat < 0 || sleepFloat > 24) {
+    showError('Les heures de sommeil doivent etre entre 0 et 24', 'Erreur de validation')
+    return
+  }
+  if (isNaN(socialInt) || socialInt < 1 || socialInt > 5) {
+    showError('L\'interaction sociale doit etre entre 1 et 5', 'Erreur de validation')
+    return
+  }
+
   try {
+    savingLog.value = true
+
     const logData = {
-      child_id: selectedChild.value.id,
-      focus_level: focus.value,
+      childId: selectedChild.value.id,
+      focusLevel: focusInt,
       mood: mood.value,
-      sleep_hours: sleep.value,
-      social_interaction: social.value,
-      note: note.value,
-      log_date: new Date().toISOString().split('T')[0]
+      sleepHours: sleepFloat,
+      socialInteraction: socialInt,
+      note: note.value || null,
+      logDate: new Date().toISOString().split('T')[0]
     }
-    
+
+    console.log('Envoi du log:', logData)
     await api.post('/logs', logData)
-    
-    const moodEmoji = getMoodEmoji(mood.value)
-    showSuccess(
-      `${moodEmoji} Log enregistré pour ${selectedChild.value.name}\nFocus: ${focus.value}/5 | Sommeil: ${sleep.value}h | Social: ${social.value}/5`,
-      '✓ Comportement enregistré'
-    )
-    
+
+    await loadData()
+    await loadUserPoints()
+
+    const totalLogs = logs.value.length
+    const prevFocus = insights.value?.weekly_comparison?.previous_week_focus || focusInt
+    const focusDiff = focusInt - prevFocus
+
+    lastLogData.value = {
+      mood: mood.value,
+      focus_level: focusInt,
+      sleep_hours: sleepFloat,
+      totalLogs: totalLogs,
+      focusDiff: Math.round(focusDiff * 10) / 10,
+      weeklyAvg: insights.value?.avg_focus ? `${insights.value.avg_focus}/5` : '—',
+      pointsEarned: 10
+    }
+    showLogSuccessModal.value = true
+
     focus.value = 3
     mood.value = 'neutral'
     sleep.value = 8
     social.value = 3
     note.value = ''
     showLogForm.value = false
-    
-    await loadData()
-    await loadUserPoints()
-    
+
   } catch (err) {
-    console.error('Error adding log:', err)
-    showError(err.response?.data?.message || 'Impossible d\'enregistrer le log', 'Erreur d\'enregistrement')
+    console.error('Erreur lors de l\'ajout du log:', err)
+    showError('Erreur lors de l\'enregistrement', 'Erreur')
+  } finally {
+    savingLog.value = false
   }
 }
 
-const onChildChange = () => {
-  loadData()
-}
-
-const goTo = (path) => {
-  router.push(path)
-}
+const onChildChange = () => { loadData() }
+const goTo = (path) => { router.push(path) }
 
 const getRiskBg = (risk) => {
   switch(risk) {
-    case 'high': return 'linear-gradient(135deg, #ef4444, #dc2626)'
+    case 'high':   return 'linear-gradient(135deg, #ef4444, #dc2626)'
     case 'medium': return 'linear-gradient(135deg, #f59e0b, #d97706)'
-    case 'low': return 'linear-gradient(135deg, #10b981, #059669)'
-    default: return 'linear-gradient(135deg, #6b7280, #4b5563)'
+    case 'low':    return 'linear-gradient(135deg, #10b981, #059669)'
+    default:       return 'linear-gradient(135deg, #6b7280, #4b5563)'
   }
 }
 
 const getMoodEmoji = (moodName) => {
-  const emojis = {
-    'happy': '😊',
-    'sad': '😢',
-    'angry': '😡',
-    'neutral': '😐',
-    'excited': '🤩',
-    'anxious': '😰'
-  }
+  const emojis = { happy: '😊', sad: '😢', angry: '😡', neutral: '😐', excited: '🤩', anxious: '😰' }
   return emojis[moodName] || '😊'
 }
 
 const getMoodColor = (moodName) => {
-  const colors = {
-    'happy': '#10b981',
-    'sad': '#3b82f6',
-    'angry': '#ef4444',
-    'neutral': '#6b7280',
-    'excited': '#f59e0b',
-    'anxious': '#8b5cf6'
-  }
+  const colors = { happy: '#10b981', sad: '#3b82f6', angry: '#ef4444', neutral: '#6b7280', excited: '#f59e0b', anxious: '#8b5cf6' }
   return colors[moodName] || '#6b7280'
 }
 
 const formatDate = (date) => {
+  if (!date) return ''
   return new Date(date).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })
-}
-
-const getRecommendations = () => {
-  const recommendations = []
-  
-  if (insights.value?.avg_focus < 3) {
-    recommendations.push({
-      icon: '🧘',
-      title: 'Focus Exercise',
-      description: 'Try 5 minutes of breathing exercises before homework'
-    })
-  }
-  
-  if (insights.value?.avg_sleep < 7) {
-    recommendations.push({
-      icon: '😴',
-      title: 'Sleep Routine',
-      description: 'Establish a consistent bedtime routine'
-    })
-  }
-  
-  if (insights.value?.avg_social < 3) {
-    recommendations.push({
-      icon: '👥',
-      title: 'Social Activity',
-      description: 'Encourage playdates or group activities'
-    })
-  }
-  
-  if (recommendations.length === 0) {
-    recommendations.push({
-      icon: '🎉',
-      title: 'Keep Going!',
-      description: 'Great progress! Continue with daily tracking'
-    })
-  }
-  
-  return recommendations.slice(0, 3)
-}
-
-const getMostCommonMood = () => {
-  if (!logs.value.length) return '😐 Neutral'
-  const moodCount = {}
-  logs.value.forEach(log => {
-    moodCount[log.mood] = (moodCount[log.mood] || 0) + 1
-  })
-  const mostCommon = Object.entries(moodCount).sort((a,b) => b[1] - a[1])[0]
-  return mostCommon ? `${getMoodEmoji(mostCommon[0])} ${mostCommon[0]}` : '😐 Neutral'
 }
 
 const getMoodStats = () => {
@@ -609,48 +620,45 @@ const getMoodStats = () => {
   return moodCount
 }
 
+const getMostCommonMood = () => {
+  if (!logs.value.length) return 'neutral'
+  const moodCount = getMoodStats()
+  const mostCommon = Object.entries(moodCount).sort((a,b) => b[1] - a[1])[0]
+  return mostCommon ? mostCommon[0] : 'neutral'
+}
+
+const getRecommendations = () => {
+  const recommendations = []
+  if (insights.value?.avg_focus < 3) {
+    recommendations.push({ icon: '🧘', title: 'Focus Exercise', description: 'Try 5 minutes of breathing exercises before homework' })
+  }
+  if (insights.value?.avg_sleep < 7) {
+    recommendations.push({ icon: '😴', title: 'Sleep Routine', description: 'Establish a consistent bedtime routine' })
+  }
+  if (insights.value?.avg_social < 3) {
+    recommendations.push({ icon: '👥', title: 'Social Activity', description: 'Encourage playdates or group activities' })
+  }
+  if (recommendations.length === 0) {
+    recommendations.push({ icon: '🎉', title: 'Keep Going!', description: 'Great progress! Continue with daily tracking' })
+  }
+  return recommendations.slice(0, 3)
+}
+
 const getActiveAlerts = () => {
   const alerts = []
-  
   if (insights.value?.risk_level === 'high') {
-    alerts.push({
-      type: 'alert-high',
-      icon: '🔴',
-      message: 'High risk pattern detected',
-      suggestion: 'Consider consulting with a psychologist'
-    })
-    if (insights.value?.risk_level === 'high') {
-      showWarning('⚠️ Niveau de risque élevé détecté. Consultez les insights pour plus d\'informations.', 'Alerte')
-    }
+    alerts.push({ type: 'alert-high', icon: '🔴', message: 'High risk pattern detected', suggestion: 'Consider consulting with a psychologist' })
   } else if (insights.value?.risk_level === 'medium') {
-    alerts.push({
-      type: 'alert-medium',
-      icon: '🟡',
-      message: 'Moderate risk pattern detected',
-      suggestion: 'Monitor closely and maintain daily logs'
-    })
+    alerts.push({ type: 'alert-medium', icon: '🟡', message: 'Moderate risk pattern detected', suggestion: 'Monitor closely and maintain daily logs' })
   }
-  
   if (insights.value?.weekly_comparison?.change < -0.5) {
-    alerts.push({
-      type: 'alert-warning',
-      icon: '⚠️',
-      message: 'Focus level decreased this week',
-      suggestion: 'Check sleep patterns and daily routine'
-    })
+    alerts.push({ type: 'alert-warning', icon: '⚠️', message: 'Focus level decreased this week', suggestion: 'Check sleep patterns and daily routine' })
   }
-  
-  const today = new Date().toDateString()
-  const loggedToday = logs.value.some(log => new Date(log.log_date).toDateString() === today)
+  const today = new Date().toISOString().split('T')[0]
+  const loggedToday = logs.value.some(log => (log.logDate || log.log_date) === today)
   if (!loggedToday && logs.value.length > 0) {
-    alerts.push({
-      type: 'alert-info',
-      icon: '📝',
-      message: 'No log recorded today',
-      suggestion: 'Click "Log Today" to keep tracking'
-    })
+    alerts.push({ type: 'alert-info', icon: '📝', message: 'No log recorded today', suggestion: 'Click "Log Today" to keep tracking' })
   }
-  
   return alerts
 }
 
@@ -663,10 +671,8 @@ onMounted(() => {
 </script>
 
 <style scoped>
-.dashboard-container {
-  min-height: 100vh;
-  background: #f5f7fb;
-}
+/* Garde tous les styles existants inchanges */
+.dashboard-container { min-height: 100vh; background: #f5f7fb; }
 
 .hero-section {
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
@@ -674,38 +680,16 @@ onMounted(() => {
   margin-bottom: -30px;
 }
 
-.hero-content {
-  max-width: 1200px;
-  margin: 0 auto;
-  padding: 0 20px;
-}
+.hero-content { max-width: 1200px; margin: 0 auto; padding: 0 20px; }
+.hero-title { font-size: 28px; font-weight: 700; color: white; margin-bottom: 8px; }
+.hero-subtitle { font-size: 16px; color: rgba(255,255,255,0.8); }
 
-.hero-title {
-  font-size: 28px;
-  font-weight: 700;
-  color: white;
-  margin-bottom: 8px;
-}
+.container { max-width: 1200px; margin: 0 auto; padding: 0 20px 40px 20px; }
 
-.hero-subtitle {
-  font-size: 16px;
-  color: rgba(255,255,255,0.8);
-}
-
-.container {
-  max-width: 1200px;
-  margin: 0 auto;
-  padding: 0 20px 40px 20px;
-}
-
-.loading-state {
-  text-align: center;
-  padding: 60px 20px;
-}
+.loading-state { text-align: center; padding: 60px 20px; }
 
 .spinner {
-  width: 50px;
-  height: 50px;
+  width: 50px; height: 50px;
   border: 3px solid #e0e6ed;
   border-top-color: #667eea;
   border-radius: 50%;
@@ -713,757 +697,249 @@ onMounted(() => {
   margin: 0 auto 20px;
 }
 
-@keyframes spin {
-  to { transform: rotate(360deg); }
-}
+@keyframes spin { to { transform: rotate(360deg); } }
 
-.error-state {
-  text-align: center;
-  padding: 60px 20px;
-  background: white;
-  border-radius: 24px;
-}
-
-.error-icon {
-  font-size: 48px;
-  display: block;
-  margin-bottom: 16px;
-}
-
-.retry-btn {
-  margin-top: 20px;
-  padding: 10px 24px;
-  background: #667eea;
-  color: white;
-  border: none;
-  border-radius: 30px;
-  cursor: pointer;
-}
+.error-state { text-align: center; padding: 60px 20px; background: white; border-radius: 24px; }
+.error-icon { font-size: 48px; display: block; margin-bottom: 16px; }
+.retry-btn { margin-top: 20px; padding: 10px 24px; background: #667eea; color: white; border: none; border-radius: 30px; cursor: pointer; }
 
 .child-selector-card {
-  background: white;
-  border-radius: 20px;
-  padding: 20px 24px;
-  margin-bottom: 24px;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 16px;
-  box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+  background: white; border-radius: 20px; padding: 20px 24px; margin-bottom: 24px;
+  display: flex; justify-content: space-between; align-items: center;
+  flex-wrap: wrap; gap: 16px; box-shadow: 0 2px 10px rgba(0,0,0,0.05);
 }
 
-.selector-label {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-weight: 600;
-  color: #374151;
-}
-
-.selector-icon {
-  font-size: 24px;
-}
-
-.child-select {
-  padding: 10px 16px;
-  border: 2px solid #e0e6ed;
-  border-radius: 40px;
-  font-size: 14px;
-  background: white;
-  cursor: pointer;
-  min-width: 200px;
-}
-
-.stats-grid {
-  display: grid;
-  grid-template-columns: repeat(5, 1fr);
-  gap: 20px;
-  margin-bottom: 32px;
-}
-
-.stat-card {
-  background: white;
-  border-radius: 20px;
-  padding: 20px;
-  position: relative;
-  overflow: hidden;
-  box-shadow: 0 2px 10px rgba(0,0,0,0.05);
-  transition: transform 0.3s ease;
-}
-
-.stat-card:hover {
-  transform: translateY(-4px);
-}
-
-.risk-card {
-  color: white;
-}
-
-.focus-card {
-  border-left: 4px solid #667eea;
-}
-
-.sleep-card {
-  border-left: 4px solid #10b981;
-}
-
-.social-card {
-  border-left: 4px solid #f59e0b;
-}
-
-.points-card {
-  border-left: 4px solid #f59e0b;
-  background: linear-gradient(135deg, #fffbeb, #fef3c7);
-}
-
-.points-card .stat-icon {
-  color: #f59e0b;
-}
-
-.stat-icon {
-  font-size: 32px;
-  margin-bottom: 12px;
-}
-
-.stat-info {
-  margin-bottom: 8px;
-}
-
-.stat-label {
-  display: block;
-  font-size: 13px;
-  opacity: 0.7;
-  margin-bottom: 4px;
-}
-
-.stat-value {
-  display: block;
-  font-size: 28px;
-  font-weight: 700;
-}
-
-.stat-trend {
-  font-size: 12px;
-  opacity: 0.8;
-}
-
-.trend-up { color: #10b981; }
-.trend-down { color: #ef4444; }
-
-.section-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 20px;
-}
-
-.section-header h2 {
-  font-size: 20px;
-  font-weight: 600;
-  color: #1f2937;
-}
-
-.toggle-btn, .insights-badge, .logs-count, .recommendations-badge, .alert-count {
-  padding: 6px 16px;
-  border-radius: 30px;
-  font-size: 12px;
-  font-weight: 500;
-  cursor: pointer;
-  border: none;
-}
-
-.toggle-btn, .insights-badge, .logs-count {
-  background: #eef2ff;
-  color: #667eea;
-}
-
-.recommendations-badge {
-  background: #fef3c7;
-  color: #d97706;
-}
-
-.alert-count {
-  background: #fee2e2;
-  color: #dc2626;
-}
-
-.log-form-card {
-  background: white;
-  border-radius: 24px;
-  padding: 24px;
-  margin-bottom: 32px;
-  box-shadow: 0 4px 20px rgba(0,0,0,0.08);
-}
-
-.form-grid {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 20px;
-}
-
-.form-field.full-width {
-  grid-column: span 2;
-}
-
-.form-field label {
-  display: block;
-  font-size: 13px;
-  font-weight: 600;
-  color: #4b5563;
-  margin-bottom: 8px;
-}
-
-.form-input {
-  width: 100%;
-  padding: 10px 14px;
-  border: 2px solid #e0e6ed;
-  border-radius: 12px;
-  font-size: 14px;
-}
-
-.form-textarea {
-  width: 100%;
-  padding: 10px 14px;
-  border: 2px solid #e0e6ed;
-  border-radius: 12px;
-  font-size: 14px;
-  resize: vertical;
-}
-
-.focus-slider {
-  width: 100%;
-  margin-bottom: 8px;
-}
-
-.stars-preview .star {
-  font-size: 20px;
-  color: #e5e7eb;
-}
-
-.stars-preview .star.filled {
-  color: #f59e0b;
-}
-
-.mood-buttons {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.mood-btn {
-  padding: 6px 12px;
-  border: 2px solid #e0e6ed;
-  border-radius: 30px;
-  background: white;
-  cursor: pointer;
-  transition: all 0.2s;
-  font-size: 13px;
-}
-
-.mood-btn.active {
-  border-color: #667eea;
-  background: #eef2ff;
-  color: #667eea;
-}
-
-.social-buttons {
-  display: flex;
-  gap: 8px;
-}
-
-.social-btn {
-  width: 40px;
-  height: 40px;
-  border: 2px solid #e0e6ed;
-  border-radius: 12px;
-  background: white;
-  cursor: pointer;
-  transition: all 0.2s;
-  font-weight: 600;
-}
-
-.social-btn.active {
-  background: #667eea;
-  border-color: #667eea;
-  color: white;
-}
-
-.save-btn {
-  margin-top: 20px;
-  padding: 12px 24px;
-  background: linear-gradient(135deg, #10b981, #059669);
-  color: white;
-  border: none;
-  border-radius: 40px;
-  font-weight: 600;
-  cursor: pointer;
-  width: 100%;
-}
-
-.alerts-section {
-  margin-bottom: 32px;
-}
-
-.alerts-list {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.alert-card {
-  display: flex;
-  gap: 12px;
-  padding: 16px;
-  border-radius: 16px;
-  background: white;
-  border-left: 4px solid;
-}
-
-.alert-card.alert-high {
-  border-left-color: #dc2626;
-  background: #fef2f2;
-}
-
-.alert-card.alert-medium {
-  border-left-color: #f59e0b;
-  background: #fffbeb;
-}
-
-.alert-card.alert-warning {
-  border-left-color: #f59e0b;
-  background: #fffbeb;
-}
-
-.alert-card.alert-info {
-  border-left-color: #3b82f6;
-  background: #eff6ff;
-}
-
-.alert-icon {
-  font-size: 20px;
-}
-
-.alert-content p {
-  font-size: 14px;
-  font-weight: 500;
-  margin-bottom: 4px;
-}
-
-.alert-content small {
-  font-size: 11px;
-  color: #6b7280;
-}
-
-.insights-section {
-  margin-bottom: 32px;
-}
-
-.insights-card {
-  background: linear-gradient(135deg, #eef2ff, #f3e8ff);
-  border-radius: 24px;
-  padding: 24px;
-}
-
-.insights-list {
-  list-style: none;
-  margin-bottom: 20px;
-}
-
-.insight-item {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 10px 0;
-  border-bottom: 1px solid rgba(0,0,0,0.05);
-}
-
-.insight-icon {
-  font-size: 20px;
-}
-
-.weekly-compare {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 20px;
-  padding-top: 16px;
-  border-top: 1px solid rgba(0,0,0,0.1);
-}
-
-.compare-item {
-  text-align: center;
-}
-
-.compare-label {
-  display: block;
-  font-size: 12px;
-  color: #6b7280;
-}
-
-.compare-value {
-  display: block;
-  font-size: 20px;
-  font-weight: 700;
-  color: #374151;
-}
-
-.compare-arrow {
-  font-size: 20px;
-  color: #9ca3af;
-}
-
-.compare-change {
-  font-size: 18px;
-  font-weight: 700;
-}
-
-.compare-change.positive {
-  color: #10b981;
-}
-
-.compare-change.negative {
-  color: #ef4444;
-}
-
-.recommendations-section {
-  margin-bottom: 32px;
-}
-
-.recommendations-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: 16px;
-}
-
-.recommendation-card {
-  background: linear-gradient(135deg, #fef3c7, #fde68a);
-  border-radius: 16px;
-  padding: 16px;
-  display: flex;
-  gap: 12px;
-  transition: transform 0.2s;
-}
-
-.recommendation-card:hover {
-  transform: translateY(-2px);
-}
-
-.rec-icon {
-  font-size: 32px;
-}
-
-.rec-content h4 {
-  font-size: 14px;
-  font-weight: 700;
-  margin-bottom: 4px;
-  color: #92400e;
-}
-
-.rec-content p {
-  font-size: 12px;
-  color: #b45309;
-}
-
-.additional-charts {
-  margin-bottom: 32px;
-}
-
-.charts-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 20px;
-}
-
-.mini-chart-card {
-  background: white;
-  border-radius: 16px;
-  padding: 16px;
-  box-shadow: 0 2px 10px rgba(0,0,0,0.05);
-}
-
-.mini-chart-header {
-  display: flex;
-  justify-content: space-between;
-  margin-bottom: 12px;
-  font-size: 13px;
-  font-weight: 600;
-  color: #4b5563;
-}
-
-.mini-chart-value {
-  color: #1a0a2e;
-  font-weight: 700;
-}
-
-.progress-bar {
-  height: 8px;
-  background: #e5e7eb;
-  border-radius: 4px;
-  overflow: hidden;
-}
-
-.progress-fill {
-  height: 100%;
-  border-radius: 4px;
-  transition: width 0.3s;
-}
-
-.sleep-fill {
-  background: #8b5cf6;
-}
-
-.stars-display {
-  display: flex;
-  gap: 4px;
-}
-
-.stars-display .star {
-  font-size: 18px;
-  color: #e5e7eb;
-}
-
-.stars-display .star.filled {
-  color: #f59e0b;
-}
-
-.mood-tags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.mood-tag {
-  font-size: 12px;
-  padding: 4px 8px;
-  background: #f3f4f6;
-  border-radius: 20px;
-}
-
-.logs-section {
-  margin-top: 32px;
-}
-
-.logs-table-wrapper {
-  background: white;
-  border-radius: 20px;
-  overflow-x: auto;
-  box-shadow: 0 2px 10px rgba(0,0,0,0.05);
-}
-
-.logs-table {
-  width: 100%;
-  border-collapse: collapse;
-}
-
-.logs-table th {
-  text-align: left;
-  padding: 16px;
-  background: #f9fafb;
-  font-weight: 600;
-  font-size: 13px;
-  color: #6b7280;
-}
-
-.logs-table td {
-  padding: 14px 16px;
-  border-bottom: 1px solid #f3f4f6;
-}
-
-.log-date {
-  font-weight: 500;
-  color: #374151;
-}
-
-.focus-indicator {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.focus-bar {
-  width: 60px;
-  height: 6px;
-  background: #667eea;
-  border-radius: 3px;
-}
-
-.focus-value {
-  font-size: 13px;
-}
-
-.mood-badge {
-  display: inline-block;
-  padding: 4px 10px;
-  border-radius: 30px;
-  font-size: 12px;
-  font-weight: 500;
-}
-
-.sleep-value {
-  font-weight: 500;
-}
-
-.social-stars {
-  display: flex;
-  gap: 3px;
-}
-
-.small-star {
-  font-size: 12px;
-  color: #e5e7eb;
-}
-
-.small-star.filled {
-  color: #f59e0b;
-}
-
-.empty-state, .empty-logs {
-  text-align: center;
-  padding: 60px 20px;
-  background: white;
-  border-radius: 24px;
-}
-
-.empty-icon {
-  font-size: 64px;
-  margin-bottom: 16px;
-}
-
-.empty-hint {
-  font-size: 13px;
-  color: #9ca3af;
-  margin-top: 8px;
-}
+.selector-label { display: flex; align-items: center; gap: 8px; font-weight: 600; color: #374151; }
+.selector-icon { font-size: 24px; }
+.child-select { padding: 10px 16px; border: 2px solid #e0e6ed; border-radius: 40px; font-size: 14px; background: white; cursor: pointer; min-width: 200px; }
 
-.btn-add-first {
-  margin-top: 20px;
-  padding: 12px 24px;
+.btn-test {
   background: linear-gradient(135deg, #1a0a2e, #2d1b4e);
   color: white;
   border: none;
+  padding: 10px 24px;
   border-radius: 40px;
   font-weight: 600;
   cursor: pointer;
+  transition: all 0.3s;
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
-.slide-fade-enter-active {
-  transition: all 0.3s ease-out;
+.btn-test:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(26, 10, 46, 0.3);
 }
 
-.slide-fade-leave-active {
-  transition: all 0.2s ease-in;
+.test-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2000;
+  overflow-y: auto;
 }
 
-.slide-fade-enter-from,
-.slide-fade-leave-to {
-  transform: translateY(-10px);
-  opacity: 0;
+.test-modal {
+  background: #f5f7fb;
+  border-radius: 32px;
+  width: 95%;
+  max-width: 1000px;
+  max-height: 90vh;
+  overflow-y: auto;
+  position: relative;
+  animation: modalSlideUp 0.3s ease;
 }
 
-.emotion-weather-card {
+@keyframes modalSlideUp {
+  from { opacity: 0; transform: translateY(30px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.test-modal-close {
+  position: sticky;
+  top: 10px;
+  right: 20px;
+  float: right;
   background: white;
-  border-radius: 24px;
-  padding: 24px;
-  margin-bottom: 24px;
+  border: none;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  font-size: 20px;
+  cursor: pointer;
+  z-index: 10;
+  margin: 10px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+}
+
+.test-modal-close:hover {
+  background: #fee2e2;
+  color: #ef4444;
+  transform: scale(1.05);
+}
+
+.stats-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 20px; margin-bottom: 32px; }
+
+.stat-card {
+  background: white; border-radius: 20px; padding: 20px;
+  position: relative; overflow: hidden;
   box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+  transition: transform 0.3s ease;
 }
+.stat-card:hover { transform: translateY(-4px); }
+.risk-card { color: white; }
+.focus-card { border-left: 4px solid #667eea; }
+.sleep-card { border-left: 4px solid #10b981; }
+.social-card { border-left: 4px solid #f59e0b; }
+.points-card { border-left: 4px solid #f59e0b; background: linear-gradient(135deg, #fffbeb, #fef3c7); }
+.points-card .stat-icon { color: #f59e0b; }
+.stat-icon { font-size: 32px; margin-bottom: 12px; }
+.stat-info { margin-bottom: 8px; }
+.stat-label { display: block; font-size: 13px; opacity: 0.7; margin-bottom: 4px; }
+.stat-value { display: block; font-size: 28px; font-weight: 700; }
+.stat-trend { font-size: 12px; opacity: 0.8; }
+.trend-up { color: #10b981; }
+.trend-down { color: #ef4444; }
 
-.emotion-weather-card h3 {
-  font-size: 18px;
-  font-weight: 600;
-  margin-bottom: 20px;
-  color: #1f2937;
-}
+.section-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+.section-header h2 { font-size: 20px; font-weight: 600; color: #1f2937; }
 
-.emotion-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
-  gap: 15px;
-  margin-bottom: 20px;
+.toggle-btn, .insights-badge, .logs-count, .recommendations-badge, .alert-count {
+  padding: 6px 16px; border-radius: 30px; font-size: 12px; font-weight: 500; cursor: pointer; border: none;
 }
+.toggle-btn, .insights-badge, .logs-count { background: #eef2ff; color: #667eea; }
+.recommendations-badge { background: #fef3c7; color: #d97706; }
+.alert-count { background: #fee2e2; color: #dc2626; }
 
-.emotion-item {
-  text-align: center;
-  padding: 12px;
-  background: #f9fafb;
-  border-radius: 16px;
-  transition: all 0.3s ease;
-}
+.log-form-card { background: white; border-radius: 24px; padding: 24px; margin-bottom: 32px; box-shadow: 0 4px 20px rgba(0,0,0,0.08); }
+.form-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 20px; }
+.form-field.full-width { grid-column: span 2; }
+.form-field label { display: block; font-size: 13px; font-weight: 600; color: #4b5563; margin-bottom: 8px; }
+.form-input { width: 100%; padding: 10px 14px; border: 2px solid #e0e6ed; border-radius: 12px; font-size: 14px; }
+.form-textarea { width: 100%; padding: 10px 14px; border: 2px solid #e0e6ed; border-radius: 12px; font-size: 14px; resize: vertical; }
+.focus-slider { width: 100%; margin-bottom: 8px; }
+.stars-preview .star { font-size: 20px; color: #e5e7eb; }
+.stars-preview .star.filled { color: #f59e0b; }
+.mood-buttons { display: flex; gap: 8px; flex-wrap: wrap; }
+.mood-btn { padding: 6px 12px; border: 2px solid #e0e6ed; border-radius: 30px; background: white; cursor: pointer; transition: all 0.2s; font-size: 13px; }
+.mood-btn.active { border-color: #667eea; background: #eef2ff; color: #667eea; }
+.social-buttons { display: flex; gap: 8px; }
+.social-btn { width: 40px; height: 40px; border: 2px solid #e0e6ed; border-radius: 12px; background: white; cursor: pointer; transition: all 0.2s; font-weight: 600; }
+.social-btn.active { background: #667eea; border-color: #667eea; color: white; }
 
-.emotion-item:hover {
-  transform: translateY(-5px);
-  box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+.save-btn {
+  margin-top: 20px; padding: 12px 24px;
+  background: linear-gradient(135deg, #10b981, #059669);
+  color: white; border: none; border-radius: 40px;
+  font-weight: 600; cursor: pointer; width: 100%;
+  transition: all 0.2s;
 }
+.save-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+.save-btn:not(:disabled):hover { transform: translateY(-2px); box-shadow: 0 4px 16px rgba(16,185,129,0.4); }
 
-.emotion-emoji {
-  font-size: 36px;
-  margin-bottom: 8px;
-}
+.alerts-section { margin-bottom: 32px; }
+.alerts-list { display: flex; flex-direction: column; gap: 12px; }
+.alert-card { display: flex; gap: 12px; padding: 16px; border-radius: 16px; background: white; border-left: 4px solid; }
+.alert-card.alert-high { border-left-color: #dc2626; background: #fef2f2; }
+.alert-card.alert-medium { border-left-color: #f59e0b; background: #fffbeb; }
+.alert-card.alert-warning { border-left-color: #f59e0b; background: #fffbeb; }
+.alert-card.alert-info { border-left-color: #3b82f6; background: #eff6ff; }
+.alert-icon { font-size: 20px; }
+.alert-content p { font-size: 14px; font-weight: 500; margin-bottom: 4px; }
+.alert-content small { font-size: 11px; color: #6b7280; }
 
-.emotion-name {
-  font-size: 12px;
-  font-weight: 600;
-  color: #4b5563;
-  text-transform: capitalize;
-  margin-bottom: 4px;
-}
+.insights-section { margin-bottom: 32px; }
+.insights-card { background: linear-gradient(135deg, #eef2ff, #f3e8ff); border-radius: 24px; padding: 24px; }
+.insights-list { list-style: none; margin-bottom: 20px; }
+.insight-item { display: flex; align-items: center; gap: 12px; padding: 10px 0; border-bottom: 1px solid rgba(0,0,0,0.05); }
+.insight-icon { font-size: 20px; }
+.weekly-compare { display: flex; align-items: center; justify-content: center; gap: 20px; padding-top: 16px; border-top: 1px solid rgba(0,0,0,0.1); }
+.compare-item { text-align: center; }
+.compare-label { display: block; font-size: 12px; color: #6b7280; }
+.compare-value { display: block; font-size: 20px; font-weight: 700; color: #374151; }
+.compare-arrow { font-size: 20px; color: #9ca3af; }
+.compare-change { font-size: 18px; font-weight: 700; }
+.compare-change.positive { color: #10b981; }
+.compare-change.negative { color: #ef4444; }
 
-.emotion-count {
-  font-size: 14px;
-  font-weight: 700;
-  color: #1f2937;
-  margin-bottom: 8px;
-}
+.recommendations-section { margin-bottom: 32px; }
+.recommendations-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; }
+.recommendation-card { background: linear-gradient(135deg, #fef3c7, #fde68a); border-radius: 16px; padding: 16px; display: flex; gap: 12px; transition: transform 0.2s; }
+.recommendation-card:hover { transform: translateY(-2px); }
+.rec-icon { font-size: 32px; }
+.rec-content h4 { font-size: 14px; font-weight: 700; margin-bottom: 4px; color: #92400e; }
+.rec-content p { font-size: 12px; color: #b45309; }
 
-.emotion-bar {
-  height: 6px;
-  background: #e5e7eb;
-  border-radius: 3px;
-  overflow: hidden;
-}
+.additional-charts { margin-bottom: 32px; }
+.charts-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
+.mini-chart-card { background: white; border-radius: 16px; padding: 16px; box-shadow: 0 2px 10px rgba(0,0,0,0.05); }
+.mini-chart-header { display: flex; justify-content: space-between; margin-bottom: 12px; font-size: 13px; font-weight: 600; color: #4b5563; }
+.mini-chart-value { color: #1a0a2e; font-weight: 700; }
+.progress-bar { height: 8px; background: #e5e7eb; border-radius: 4px; overflow: hidden; }
+.progress-fill { height: 100%; border-radius: 4px; transition: width 0.3s; }
+.sleep-fill { background: #8b5cf6; }
 
-.emotion-fill {
-  height: 100%;
-  border-radius: 3px;
-  transition: width 0.5s ease;
-}
+.stars-display { display: flex; gap: 4px; }
+.stars-display .star { font-size: 18px; color: #e5e7eb; }
+.stars-display .star.filled { color: #f59e0b; }
+.mood-tags { display: flex; flex-wrap: wrap; gap: 8px; }
+.mood-tag { font-size: 12px; padding: 4px 8px; background: #f3f4f6; border-radius: 20px; }
 
-.emotion-message {
-  text-align: center;
-  padding: 16px;
-  background: linear-gradient(135deg, #f3f4f6, #e5e7eb);
-  border-radius: 16px;
-  font-size: 14px;
-  font-weight: 500;
-  color: #374151;
-}
+.logs-section { margin-top: 32px; }
+.logs-table-wrapper { background: white; border-radius: 20px; overflow-x: auto; box-shadow: 0 2px 10px rgba(0,0,0,0.05); }
+.logs-table { width: 100%; border-collapse: collapse; }
+.logs-table th { text-align: left; padding: 16px; background: #f9fafb; font-weight: 600; font-size: 13px; color: #6b7280; }
+.logs-table td { padding: 14px 16px; border-bottom: 1px solid #f3f4f6; }
+.log-date { font-weight: 500; color: #374151; }
+.focus-indicator { display: flex; align-items: center; gap: 8px; }
+.focus-bar { width: 60px; height: 6px; background: #667eea; border-radius: 3px; }
+.focus-value { font-size: 13px; }
+.mood-badge { display: inline-block; padding: 4px 10px; border-radius: 30px; font-size: 12px; font-weight: 500; }
+.sleep-value { font-weight: 500; }
+.social-stars { display: flex; gap: 3px; }
+.small-star { font-size: 12px; color: #e5e7eb; }
+.small-star.filled { color: #f59e0b; }
+
+.empty-state, .empty-logs { text-align: center; padding: 60px 20px; background: white; border-radius: 24px; }
+.empty-icon { font-size: 64px; margin-bottom: 16px; }
+.empty-hint { font-size: 13px; color: #9ca3af; margin-top: 8px; }
+.btn-add-first { margin-top: 20px; padding: 12px 24px; background: linear-gradient(135deg, #1a0a2e, #2d1b4e); color: white; border: none; border-radius: 40px; font-weight: 600; cursor: pointer; }
+
+.slide-fade-enter-active { transition: all 0.3s ease-out; }
+.slide-fade-leave-active { transition: all 0.2s ease-in; }
+.slide-fade-enter-from, .slide-fade-leave-to { transform: translateY(-10px); opacity: 0; }
+
+.emotion-weather-card { background: white; border-radius: 24px; padding: 24px; margin-bottom: 24px; box-shadow: 0 2px 10px rgba(0,0,0,0.05); }
+.emotion-weather-card h3 { font-size: 18px; font-weight: 600; margin-bottom: 20px; color: #1f2937; }
+.emotion-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(100px, 1fr)); gap: 15px; margin-bottom: 20px; }
+.emotion-item { text-align: center; padding: 12px; background: #f9fafb; border-radius: 16px; transition: all 0.3s ease; }
+.emotion-item:hover { transform: translateY(-5px); box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+.emotion-emoji { font-size: 36px; margin-bottom: 8px; }
+.emotion-name { font-size: 12px; font-weight: 600; color: #4b5563; text-transform: capitalize; margin-bottom: 4px; }
+.emotion-count { font-size: 14px; font-weight: 700; color: #1f2937; margin-bottom: 8px; }
+.emotion-bar { height: 6px; background: #e5e7eb; border-radius: 3px; overflow: hidden; }
+.emotion-fill { height: 100%; border-radius: 3px; transition: width 0.5s ease; }
+.emotion-message { text-align: center; padding: 16px; background: linear-gradient(135deg, #f3f4f6, #e5e7eb); border-radius: 16px; font-size: 14px; font-weight: 500; color: #374151; }
 
 @media (max-width: 900px) {
-  .stats-grid {
-    grid-template-columns: repeat(2, 1fr);
-  }
-  .charts-grid {
-    grid-template-columns: 1fr;
-  }
-  .form-grid {
-    grid-template-columns: 1fr;
-  }
-  .form-field.full-width {
-    grid-column: span 1;
-  }
-  .emotion-grid {
-    grid-template-columns: repeat(2, 1fr);
-  }
+  .stats-grid { grid-template-columns: repeat(2, 1fr); }
+  .charts-grid { grid-template-columns: 1fr; }
+  .form-grid { grid-template-columns: 1fr; }
+  .form-field.full-width { grid-column: span 1; }
+  .emotion-grid { grid-template-columns: repeat(2, 1fr); }
 }
 
 @media (max-width: 600px) {
-  .stats-grid {
-    grid-template-columns: 1fr;
-  }
-  .child-selector-card {
-    flex-direction: column;
-    text-align: center;
-  }
+  .stats-grid { grid-template-columns: 1fr; }
+  .child-selector-card { flex-direction: column; text-align: center; }
+  .btn-test { width: 100%; justify-content: center; }
 }
 </style>

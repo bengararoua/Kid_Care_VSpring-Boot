@@ -1,157 +1,48 @@
-package com.kidcare.insight.controller;
+package com.kidcare.insight.controller;  // Déclare le package contenant les contrôleurs REST de l'application
 
-import com.kidcare.insight.entity.*;
-import com.kidcare.insight.repository.*;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.http.ResponseEntity;
-import org.springframework.security.core.annotation.AuthenticationPrincipal;
-import org.springframework.security.core.userdetails.UserDetails;
-import org.springframework.web.bind.annotation.*;
-import java.time.LocalDate;
-import java.util.*;
-import java.util.stream.Collectors;
+import com.kidcare.insight.entity.User;  // Importe l'entité représentant un utilisateur (parent, enseignant, psychologue)
+import com.kidcare.insight.repository.UserRepository;  // Importe le repository JPA pour accéder aux données des utilisateurs en base
+import org.springframework.beans.factory.annotation.Autowired;  // Importe l'annotation pour l'injection automatique de dépendances
+import org.springframework.http.ResponseEntity;  // Importe la classe permettant de construire des réponses HTTP complètes
+import org.springframework.security.core.annotation.AuthenticationPrincipal;  // Importe l'annotation pour récupérer l'utilisateur authentifié directement
+import org.springframework.security.core.userdetails.UserDetails;  // Importe l'interface contenant les informations de l'utilisateur connecté
+import org.springframework.web.bind.annotation.*;  // Importe toutes les annotations REST (RestController, RequestMapping, GetMapping)
 
-@RestController
-@RequestMapping("/api/dashboard")
-public class DashboardController {
+import java.util.HashMap;  // Importe la classe HashMap pour créer des map clé-valeur dynamiques
+import java.util.Map;  // Importe l'interface Map pour manipuler des collections clé-valeur
 
-    @Autowired
-    private UserRepository userRepository;
-    
-    @Autowired
-    private ChildRepository childRepository;
-    
-    @Autowired
-    private BehaviorLogRepository behaviorLogRepository;
-    
-    @Autowired
-    private MessageRepository messageRepository;
-    
-    @Autowired
-    private RecommendationRepository recommendationRepository;
-    
-    @Autowired
-    private NotificationRepository notificationRepository;
+@RestController  // Déclare cette classe comme un contrôleur REST (chaque méthode retourne directement du JSON)
+@RequestMapping("/api/dashboard")  // Définit le préfixe commun "/api/dashboard" pour tous les endpoints de ce contrôleur
+public class DashboardController {  // Déclare le contrôleur gérant les statistiques et informations du tableau de bord utilisateur
 
-    @GetMapping
-    public ResponseEntity<Map<String, Object>> getDashboard(@AuthenticationPrincipal UserDetails userDetails) {
-        User currentUser = userRepository.findByEmail(userDetails.getUsername()).orElseThrow();
-        Map<String, Object> data = new HashMap<>();
+    @Autowired  // Injecte automatiquement le bean UserRepository géré par Spring
+    private UserRepository userRepository;  // Repository pour accéder aux données des utilisateurs en base de données
+
+    @GetMapping("/stats")  // Associe les requêtes GET à "/api/dashboard/stats" à cette méthode
+    public ResponseEntity<Map<String, Object>> getStats(@AuthenticationPrincipal UserDetails userDetails) {  // Récupère les statistiques du tableau de bord pour l'utilisateur connecté
+        User user = userRepository.findByEmail(userDetails.getUsername())  // Cherche l'utilisateur en base de données par son email
+            .orElseThrow(() -> new RuntimeException("User not found"));  // Lance une exception si l'utilisateur n'existe pas
         
-        if (currentUser.isParent()) {
-            List<Child> children = childRepository.findByParent(currentUser);
-            long unreadMessages = messageRepository.countByReceiverAndIsReadFalse(currentUser);
-            long unreadNotifications = notificationRepository.countByUserAndIsReadFalse(currentUser);
+        Map<String, Object> stats = new HashMap<>();  // Crée une map pour stocker toutes les statistiques à retourner
+        
+        //  Utilisation des méthodes isParent(), isTeacher(), isPsychologist()
+        if (user.isParent()) {  // Vérifie si l'utilisateur connecté a le rôle PARENT
+            stats.put("role", "parent");  // Ajoute le rôle "parent" dans les statistiques
+            stats.put("childrenCount", 0); // À implémenter selon ta logique (nombre d'enfants associés au parent)
+            stats.put("points", user.getPoints());  // Ajoute les points de gamification (récompenses, niveau) de l'utilisateur
             
-            // Logs récents (10 derniers)
-            List<BehaviorLog> recentLogs = new ArrayList<>();
-            for (Child child : children) {
-                recentLogs.addAll(behaviorLogRepository.findByChildOrderByLogDateDesc(child));
-            }
-            recentLogs.sort((a, b) -> b.getLogDate().compareTo(a.getLogDate()));
-            recentLogs = recentLogs.stream().limit(10).collect(Collectors.toList());
+        } else if (user.isTeacher()) {  // Vérifie si l'utilisateur connecté a le rôle ENSEIGNANT
+            stats.put("role", "teacher");  // Ajoute le rôle "teacher" dans les statistiques
+            stats.put("studentsCount", 0); // À implémenter (nombre d'élèves associés à l'enseignant)
             
-            // Statistiques
-            int totalChildren = children.size();
-            int totalRecommendations = 0;
-            for (Child child : children) {
-                totalRecommendations += recommendationRepository.findByChildAndIsCompletedFalse(child).size();
-            }
-            
-            data.put("children", children);
-            data.put("childrenCount", totalChildren);
-            data.put("recentLogs", recentLogs);
-            data.put("unreadMessages", unreadMessages);
-            data.put("unreadNotifications", unreadNotifications);
-            data.put("pendingRecommendations", totalRecommendations);
-            data.put("role", "parent");
-            
-        } else if (currentUser.isTeacher()) {
-            List<Child> children = childRepository.findByTeacher(currentUser);
-            long unreadMessages = messageRepository.countByReceiverAndIsReadFalse(currentUser);
-            long unreadNotifications = notificationRepository.countByUserAndIsReadFalse(currentUser);
-            
-            // Logs d'aujourd'hui
-            LocalDate today = LocalDate.now();
-            List<BehaviorLog> todayLogs = new ArrayList<>();
-            for (Child child : children) {
-                todayLogs.addAll(behaviorLogRepository.findByChildOrderByLogDateDesc(child).stream()
-                    .filter(log -> log.getLogDate().equals(today))
-                    .collect(Collectors.toList()));
-            }
-            
-            // Enfants à risque (focus moyen < 2.5 sur les 7 derniers jours)
-            List<Map<String, Object>> highRiskChildren = new ArrayList<>();
-            for (Child child : children) {
-                List<BehaviorLog> recentLogs = behaviorLogRepository.findByChildOrderByLogDateDesc(child).stream()
-                    .limit(7)
-                    .collect(Collectors.toList());
-                if (!recentLogs.isEmpty()) {
-                    double avgFocus = recentLogs.stream().mapToInt(BehaviorLog::getFocusLevel).average().orElse(5);
-                    if (avgFocus < 2.5) {
-                        Map<String, Object> riskChild = new HashMap<>();
-                        riskChild.put("id", child.getId());
-                        riskChild.put("name", child.getName());
-                        riskChild.put("age", child.getAge());
-                        riskChild.put("avgFocus", Math.round(avgFocus * 10) / 10.0);
-                        highRiskChildren.add(riskChild);
-                    }
-                }
-            }
-            
-            data.put("children", children);
-            data.put("childrenCount", children.size());
-            data.put("todayLogsCount", todayLogs.size());
-            data.put("highRiskChildren", highRiskChildren);
-            data.put("highRiskCount", highRiskChildren.size());
-            data.put("unreadMessages", unreadMessages);
-            data.put("unreadNotifications", unreadNotifications);
-            data.put("role", "teacher");
-            
-        } else if (currentUser.isPsychologist()) {
-            List<Child> children = childRepository.findByPsychologist(currentUser);
-            long unreadMessages = messageRepository.countByReceiverAndIsReadFalse(currentUser);
-            long unreadNotifications = notificationRepository.countByUserAndIsReadFalse(currentUser);
-            
-            // Enfants à risque
-            List<Map<String, Object>> highRiskChildren = new ArrayList<>();
-            for (Child child : children) {
-                List<BehaviorLog> recentLogs = behaviorLogRepository.findByChildOrderByLogDateDesc(child).stream()
-                    .limit(7)
-                    .collect(Collectors.toList());
-                if (!recentLogs.isEmpty()) {
-                    double avgFocus = recentLogs.stream().mapToInt(BehaviorLog::getFocusLevel).average().orElse(5);
-                    double avgSleep = recentLogs.stream().mapToDouble(BehaviorLog::getSleepHours).average().orElse(8);
-                    if (avgFocus < 2.5 || avgSleep < 6) {
-                        Map<String, Object> riskChild = new HashMap<>();
-                        riskChild.put("id", child.getId());
-                        riskChild.put("name", child.getName());
-                        riskChild.put("age", child.getAge());
-                        riskChild.put("avgFocus", Math.round(avgFocus * 10) / 10.0);
-                        riskChild.put("avgSleep", Math.round(avgSleep * 10) / 10.0);
-                        highRiskChildren.add(riskChild);
-                    }
-                }
-            }
-            
-            // Recommandations en attente
-            List<Recommendation> pendingRecs = new ArrayList<>();
-            for (Child child : children) {
-                pendingRecs.addAll(recommendationRepository.findByChildAndIsCompletedFalse(child));
-            }
-            pendingRecs = pendingRecs.stream().limit(5).collect(Collectors.toList());
-            
-            data.put("children", children);
-            data.put("childrenCount", children.size());
-            data.put("highRiskChildren", highRiskChildren);
-            data.put("highRiskCount", highRiskChildren.size());
-            data.put("pendingRecs", pendingRecs);
-            data.put("pendingRecsCount", pendingRecs.size());
-            data.put("unreadMessages", unreadMessages);
-            data.put("unreadNotifications", unreadNotifications);
-            data.put("role", "psychologist");
+        } else if (user.isPsychologist()) {  // Vérifie si l'utilisateur connecté a le rôle PSYCHOLOGUE
+            stats.put("role", "psychologist");  // Ajoute le rôle "psychologist" dans les statistiques
+            stats.put("appointmentsCount", 0); // À implémenter (nombre de rendez-vous programmés)
         }
         
-        return ResponseEntity.ok(data);
+        stats.put("name", user.getName());  // Ajoute le nom complet de l'utilisateur dans les statistiques
+        stats.put("email", user.getEmail());  // Ajoute l'email de l'utilisateur dans les statistiques
+        
+        return ResponseEntity.ok(stats);  // Retourne HTTP 200 (OK) avec la map des statistiques en JSON
     }
 }

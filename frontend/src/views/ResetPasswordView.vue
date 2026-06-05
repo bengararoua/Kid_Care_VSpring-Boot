@@ -1,148 +1,154 @@
 <script setup>
-import { ref, onMounted } from 'vue'
-import { useRouter, useRoute } from 'vue-router'
-import axios from 'axios'
+// Bloc script avec la syntaxe Composition API de Vue 3
+import { ref, onMounted } from 'vue'  // Importe ref (variables réactives) et onMounted (hook exécuté après montage)
+import { useRouter, useRoute } from 'vue-router'  // Importe useRouter (navigation) et useRoute (accès aux paramètres d'URL)
+import axios from 'axios'  // Importe axios pour les requêtes HTTP vers le backend
 
-const router = useRouter()
-const route = useRoute()
-const email = ref('')
-const token = ref('')
-const password = ref('')
-const password_confirmation = ref('')
-const error = ref('')
-const success = ref('')
-const loading = ref(false)
-const step = ref('email') // 'email' ou 'reset'
-const showPassword = ref(false)
-const showConfirmPassword = ref(false)
+// ===== VARIABLES RÉACTIVES =====
+const router = useRouter()  // Instance du routeur pour rediriger l'utilisateur
+const route = useRoute()  // Instance de la route active pour lire les paramètres d'URL
+const email = ref('')  // Email de l'utilisateur (liaison avec le champ de saisie)
+const token = ref('')  // Token JWT de réinitialisation (reçu par email ou depuis l'URL)
+const password = ref('')  // Nouveau mot de passe (saisi par l'utilisateur)
+const password_confirmation = ref('')  // Confirmation du nouveau mot de passe
+const error = ref('')  // Message d'erreur à afficher
+const success = ref('')  // Message de succès à afficher
+const loading = ref(false)  // Indicateur de chargement (désactive le bouton pendant la requête)
+const step = ref('email') // Étape actuelle : 'email' (saisie email) ou 'reset' (saisie nouveau mot de passe)
+const showPassword = ref(false)  // Afficher/masquer le mot de passe (champ new password)
+const showConfirmPassword = ref(false)  // Afficher/masquer le mot de passe (champ confirmation)
 
-// Vérifier si on a un token dans l'URL
+// ===== HOOK ONMOUNTED (exécuté au chargement de la page) =====
 onMounted(() => {
-  if (route.query.token && route.query.email) {
-    token.value = route.query.token
-    email.value = route.query.email
-    step.value = 'reset'
-    verifyToken()
+  // Vérifier si on a un token et un email dans l'URL (lien de réinitialisation reçu par email)
+  if (route.query.token && route.query.email) {  // Si les paramètres token et email sont présents dans l'URL
+    token.value = route.query.token  // Extrait le token depuis l'URL
+    email.value = route.query.email  // Extrait l'email depuis l'URL
+    step.value = 'reset'  // Passe directement à l'étape de réinitialisation (formulaire nouveau mot de passe)
+    verifyToken()  // Vérifie que le token est encore valide avant d'afficher le formulaire
   }
 })
 
-// Envoyer la demande de réinitialisation
-const sendResetLink = async () => {
-  error.value = ''
-  success.value = ''
+// ===== MÉTHODE 1 : ENVOYER LA DEMANDE DE RÉINITIALISATION =====
+const sendResetLink = async () => {  // Envoie l'email au backend pour générer un token
+  error.value = ''  // Efface l'erreur précédente
+  success.value = ''  // Efface le succès précédent
   
-  if (!email.value) {
-    error.value = 'Please enter your email address'
-    return
+  if (!email.value) {  // Vérifie si l'email n'est pas vide
+    error.value = 'Please enter your email address'  // Affiche une erreur
+    return  // Arrête l'exécution
   }
   
-  loading.value = true
+  loading.value = true  // Active l'indicateur de chargement (bouton désactivé)
   
   try {
-    const response = await axios.post('/api/password/email', {
-      email: email.value
+    const response = await axios.post('/api/password/email', {  // Envoie une requête POST au backend
+      email: email.value  // Corps de la requête : email
     })
     
-    token.value = response.data.token
-    step.value = 'reset'
-    success.value = 'Email verified! Please enter your new password.'
-    setTimeout(() => { success.value = '' }, 3000)
+    token.value = response.data.token  // Stocke le token reçu du backend
+    step.value = 'reset'  // Passe à l'étape de réinitialisation (formulaire nouveau mot de passe)
+    success.value = 'Email verified! Please enter your new password.'  // Message de succès
+    setTimeout(() => { success.value = '' }, 3000)  // Efface le message après 3 secondes
     
-  } catch (err) {
-    error.value = err.response?.data?.error || 'Email not found'
-    setTimeout(() => { error.value = '' }, 3000)
+  } catch (err) {  // Capture les erreurs (email non trouvé, etc.)
+    error.value = err.response?.data?.error || 'Email not found'  // Affiche l'erreur du backend ou message par défaut
+    setTimeout(() => { error.value = '' }, 3000)  // Efface l'erreur après 3 secondes
   } finally {
-    loading.value = false
+    loading.value = false  // Désactive l'indicateur de chargement
   }
 }
 
-// Vérifier le token
-const verifyToken = async () => {
+// ===== MÉTHODE 2 : VÉRIFIER LE TOKEN =====
+const verifyToken = async () => {  // Vérifie si le token dans l'URL est valide (non expiré)
   try {
-    const response = await axios.post('/api/password/check-token', {
-      email: email.value,
-      token: token.value
+    const response = await axios.post('/api/password/check-token', {  // Envoie une requête POST au backend
+      email: email.value,  // Email extrait de l'URL
+      token: token.value  // Token extrait de l'URL
     })
     
-    if (!response.data.valid) {
-      error.value = response.data.expired ? 'Link has expired. Please request a new one.' : 'Invalid reset link'
-      setTimeout(() => {
-        error.value = ''
-        step.value = 'email'
-        token.value = ''
+    if (!response.data.valid) {  // Si le backend retourne valid = false
+      error.value = response.data.expired ? 'Link has expired. Please request a new one.' : 'Invalid reset link'  // Message selon cause
+      setTimeout(() => {  // Après 3 secondes
+        error.value = ''  // Efface l'erreur
+        step.value = 'email'  // Retour à l'étape email
+        token.value = ''  // Vide le token
       }, 3000)
     }
-  } catch (err) {
-    error.value = 'Invalid reset link'
-    setTimeout(() => {
-      error.value = ''
-      step.value = 'email'
+  } catch (err) {  // Capture les erreurs réseau
+    error.value = 'Invalid reset link'  // Message générique
+    setTimeout(() => {  // Après 3 secondes
+      error.value = ''  // Efface l'erreur
+      step.value = 'email'  // Retour à l'étape email
     }, 3000)
   }
 }
 
-// Réinitialiser le mot de passe
-const resetPassword = async () => {
-  error.value = ''
-  success.value = ''
+// ===== MÉTHODE 3 : RÉINITIALISER LE MOT DE PASSE =====
+const resetPassword = async () => {  // Envoie le nouveau mot de passe au backend avec le token
+  error.value = ''  // Efface l'erreur précédente
+  success.value = ''  // Efface le succès précédent
   
-  if (password.value !== password_confirmation.value) {
-    error.value = 'Passwords do not match'
-    setTimeout(() => { error.value = '' }, 3000)
-    return
+  if (password.value !== password_confirmation.value) {  // Vérifie que les mots de passe correspondent
+    error.value = 'Passwords do not match'  // Message d'erreur
+    setTimeout(() => { error.value = '' }, 3000)  // Efface après 3 secondes
+    return  // Arrête l'exécution
   }
   
-  if (password.value.length < 6) {
-    error.value = 'Password must be at least 6 characters'
-    setTimeout(() => { error.value = '' }, 3000)
-    return
+  if (password.value.length < 6) {  // Vérifie que le mot de passe a au moins 6 caractères
+    error.value = 'Password must be at least 6 characters'  // Message d'erreur
+    setTimeout(() => { error.value = '' }, 3000)  // Efface après 3 secondes
+    return  // Arrête l'exécution
   }
   
-  loading.value = true
+  loading.value = true  // Active l'indicateur de chargement
   
   try {
-    await axios.post('/api/password/reset', {
-      email: email.value,
-      token: token.value,
-      password: password.value,
-      password_confirmation: password_confirmation.value
+    await axios.post('/api/password/reset', {  // Envoie une requête POST au backend
+      email: email.value,  // Email de l'utilisateur
+      token: token.value,  // Token de réinitialisation
+      password: password.value,  // Nouveau mot de passe
+      password_confirmation: password_confirmation.value  // Confirmation du mot de passe
     })
     
-    success.value = 'Password reset successfully! Redirecting to login...'
-    setTimeout(() => {
-      router.push('/')
+    success.value = 'Password reset successfully! Redirecting to login...'  // Message de succès
+    setTimeout(() => {  // Après 2 secondes
+      router.push('/')  // Redirige vers la page de connexion
     }, 2000)
     
-  } catch (err) {
-    error.value = err.response?.data?.error || 'Failed to reset password'
-    setTimeout(() => { error.value = '' }, 3000)
+  } catch (err) {  // Capture les erreurs (token expiré, etc.)
+    error.value = err.response?.data?.error || 'Failed to reset password'  // Affiche l'erreur du backend
+    setTimeout(() => { error.value = '' }, 3000)  // Efface après 3 secondes
   } finally {
-    loading.value = false
+    loading.value = false  // Désactive l'indicateur de chargement
   }
 }
 
-const togglePasswordVisibility = () => {
-  showPassword.value = !showPassword.value
+// ===== MÉTHODES UTILITAIRES =====
+const togglePasswordVisibility = () => {  // Inverse l'affichage du mot de passe (texte ↔ masqué)
+  showPassword.value = !showPassword.value  // Bascule entre true et false
 }
 
-const toggleConfirmPasswordVisibility = () => {
-  showConfirmPassword.value = !showConfirmPassword.value
+const toggleConfirmPasswordVisibility = () => {  // Inverse l'affichage de la confirmation du mot de passe
+  showConfirmPassword.value = !showConfirmPassword.value  // Bascule entre true et false
 }
 
-const backToEmail = () => {
-  step.value = 'email'
-  email.value = ''
-  token.value = ''
-  password.value = ''
-  password_confirmation.value = ''
-  error.value = ''
-  success.value = ''
+const backToEmail = () => {  // Retour à l'étape de saisie de l'email (depuis l'étape reset)
+  step.value = 'email'  // Passe à l'étape email
+  email.value = ''  // Vide l'email
+  token.value = ''  // Vide le token
+  password.value = ''  // Vide le nouveau mot de passe
+  password_confirmation.value = ''  // Vide la confirmation
+  error.value = ''  // Efface l'erreur
+  success.value = ''  // Efface le succès
 }
 </script>
 
 <template>
+  <!-- Structure HTML de la page -->
   <div class="auth-page">
     <div class="auth-container">
+      <!-- Animation de fond avec cercles flottants -->
       <div class="background-animation">
         <div class="circle circle-1"></div>
         <div class="circle circle-2"></div>
@@ -150,8 +156,9 @@ const backToEmail = () => {
         <div class="circle circle-4"></div>
       </div>
 
+      <!-- Grille principale avec deux colonnes (côté gauche = fonctionnalités, côté droit = formulaire) -->
       <div class="auth-grid">
-        <!-- Left Side - Features -->
+        <!-- Left Side - Features (côté gauche avec les fonctionnalités de l'application) -->
         <div class="auth-features">
           <div class="features-content">
             <div class="logo-large">
@@ -186,10 +193,10 @@ const backToEmail = () => {
           </div>
         </div>
 
-        <!-- Right Side - Form -->
+        <!-- Right Side - Form (côté droit avec le formulaire de réinitialisation) -->
         <div class="auth-form-container">
           <div class="auth-card">
-            <!-- Step 1: Email Form -->
+            <!-- Step 1: Email Form (étape 1 : saisie de l'email) -->
             <div v-if="step === 'email'" class="reset-step">
               <div class="brand-section">
                 <div class="logo-icon">🔐</div>
@@ -223,7 +230,7 @@ const backToEmail = () => {
               </div>
             </div>
 
-            <!-- Step 2: Reset Password Form -->
+            <!-- Step 2: Reset Password Form (étape 2 : saisie du nouveau mot de passe) -->
             <div v-else class="reset-step">
               <div class="brand-section">
                 <div class="logo-icon">🔑</div>
@@ -282,7 +289,7 @@ const backToEmail = () => {
       </div>
     </div>
 
-    <!-- Footer -->
+    <!-- Footer (pied de page) -->
     <footer class="footer">
       <div class="container">
         <div class="footer-content">
@@ -300,6 +307,7 @@ const backToEmail = () => {
 </template>
 
 <style scoped>
+/* Styles CSS propres à ce composant (scoped = limité à cette page) */
 .auth-page {
   min-height: 100vh;
   display: flex;
@@ -592,6 +600,7 @@ const backToEmail = () => {
   font-size: 0.85rem;
 }
 
+/* Responsive : adapté pour mobile */
 @media (max-width: 900px) {
   .auth-grid {
     grid-template-columns: 1fr;

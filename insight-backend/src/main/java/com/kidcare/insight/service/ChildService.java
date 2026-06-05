@@ -1,210 +1,177 @@
-package com.kidcare.insight.service;
+package com.kidcare.insight.service;  // Déclare le package contenant les services métier de l'application
 
-import com.kidcare.insight.dto.ChildRequest;
-import com.kidcare.insight.entity.Child;
-import com.kidcare.insight.entity.User;
-import com.kidcare.insight.repository.ChildRepository;
-import com.kidcare.insight.repository.UserRepository;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
-import java.util.List;
+import com.kidcare.insight.dto.ChildRequest;  // Importe le DTO pour la requête de création/modification d'enfant
+import com.kidcare.insight.entity.Child;  // Importe l'entité Child (enfant)
+import com.kidcare.insight.entity.User;  // Importe l'entité User (utilisateur)
+import com.kidcare.insight.repository.ChildRepository;  // Importe le repository pour les enfants
+import com.kidcare.insight.repository.UserRepository;  // Importe le repository pour les utilisateurs
+import org.springframework.beans.factory.annotation.Autowired;  // Importe l'annotation pour l'injection de dépendances
+import org.springframework.stereotype.Service;  // Importe l'annotation pour déclarer un service Spring
+import org.springframework.transaction.annotation.Transactional;  // Importe l'annotation pour gérer les transactions
 
-@Service
-public class ChildService {
+import java.util.List;  // Importe l'interface List pour les collections
 
-    @Autowired
-    private ChildRepository childRepository;
+@Service  // Déclare cette classe comme un service Spring (contenant la logique métier)
+public class ChildService {  // Déclare le service responsable de la gestion des enfants
 
-    @Autowired
-    private UserRepository userRepository;
+    @Autowired  // Injecte automatiquement le repository ChildRepository
+    private ChildRepository childRepository;  // Repository pour les enfants
 
+    @Autowired  // Injecte automatiquement le repository UserRepository
+    private UserRepository userRepository;  // Repository pour les utilisateurs
+
+    // Méthode pour récupérer tous les enfants associés à un utilisateur (quel que soit son rôle)
     public List<Child> getChildrenForUser(String email) {
-        User user = userRepository.findByEmail(email)
-                .orElseThrow(() -> new RuntimeException("User not found"));
+        User user = userRepository.findByEmail(email)  // Cherche l'utilisateur par email
+                .orElseThrow(() -> new RuntimeException("Utilisateur non trouvé"));  // Lance exception si non trouvé
 
-        List<Child> children;
+        String role = user.getRole().toString();  // Récupère le rôle de l'utilisateur (PARENT, TEACHER, PSYCHOLOGIST)
 
-        if (user.isParent()) {
-            children = childRepository.findByParent(user);
-        } else if (user.isTeacher()) {
-            children = childRepository.findByTeacher(user);
-        } else if (user.isPsychologist()) {
-            children = childRepository.findByPsychologist(user);
-        } else {
-            children = List.of();
-        }
+        System.out.println("📋 getChildrenForUser - User ID: " + user.getId() + ", Role: " + role);  // Log de débogage
 
-        // FORCER LE CHARGEMENT DES RELATIONS
-        for (Child child : children) {
-            // Initialiser les relations lazy
-            if (child.getParent() != null) {
-                child.getParent().getId();
-                child.getParent().getName();
-                child.getParent().getEmail();
-            }
-            if (child.getPsychologist() != null) {
-                child.getPsychologist().getId();
-                child.getPsychologist().getName();
-                child.getPsychologist().getEmail();
-            }
-            if (child.getTeacher() != null) {
-                child.getTeacher().getId();
-                child.getTeacher().getName();
-                child.getTeacher().getEmail();
-            }
-        }
-
-        return children;
+        // Utiliser la nouvelle méthode findChildrenByUserId pour plus de sécurité
+        // Cela fonctionne pour tous les rôles (PARENT, TEACHER, PSYCHOLOGIST)
+        // La requête JPQL vérifie si l'utilisateur est parent, enseignant OU psychologue de l'enfant
+        List<Child> children = childRepository.findChildrenByUserId(user.getId());
+        
+        System.out.println("   Enfants trouvés: " + children.size());  // Log du nombre d'enfants trouvés
+        return children;  // Retourne la liste des enfants
     }
 
+    @Transactional  // Exécute la méthode dans une transaction (annule en cas d'erreur)
+    public Child createChild(ChildRequest req, String email) {  // Crée un nouvel enfant
+        User currentUser = userRepository.findByEmail(email)  // Cherche l'utilisateur par email
+                .orElseThrow(() -> new RuntimeException("Utilisateur non trouvé"));  // Lance exception si non trouvé
+
+        //  Seul un parent peut créer un enfant (sécurité)
+        if (!"PARENT".equals(currentUser.getRole().toString())) {  // Vérifie que l'utilisateur a le rôle PARENT
+            throw new RuntimeException("Seuls les parents peuvent créer des enfants");  // Lance exception si non parent
+        }
+
+        Child child = new Child();  // Crée une nouvelle instance d'enfant
+        child.setName(req.getName());  // Définit le nom de l'enfant
+        child.setAge(req.getAge());  // Définit l'âge de l'enfant
+        child.setNotes(req.getNotes());  // Définit les notes
+
+        // Associer automatiquement l'enfant au parent connecté
+        child.setParent(currentUser);  // Le parent est l'utilisateur connecté
+
+        // Si un psychologue est spécifié dans la requête, l'ajouter
+        if (req.getPsychologistId() != null) {  // Vérifie si un ID psychologue a été fourni
+            User psychologist = userRepository.findById(req.getPsychologistId())  // Cherche le psychologue par ID
+                    .orElseThrow(() -> new RuntimeException("Psychologue non trouvé"));  // Lance exception si non trouvé
+            // Vérifier que le psychologue a bien le rôle PSYCHOLOGIST
+            if (!"PSYCHOLOGIST".equals(psychologist.getRole().toString())) {  // Vérifie le rôle
+                throw new RuntimeException("L'utilisateur sélectionné n'est pas un psychologue");  // Lance exception si mauvais rôle
+            }
+            child.setPsychologist(psychologist);  // Associe le psychologue à l'enfant
+        }
+
+        // Si un enseignant est spécifié dans la requête, l'ajouter
+        if (req.getTeacherId() != null) {  // Vérifie si un ID enseignant a été fourni
+            User teacher = userRepository.findById(req.getTeacherId())  // Cherche l'enseignant par ID
+                    .orElseThrow(() -> new RuntimeException("Enseignant non trouvé"));  // Lance exception si non trouvé
+            // Vérifier que l'enseignant a bien le rôle TEACHER
+            if (!"TEACHER".equals(teacher.getRole().toString())) {  // Vérifie le rôle
+                throw new RuntimeException("L'utilisateur sélectionné n'est pas un enseignant");  // Lance exception si mauvais rôle
+            }
+            child.setTeacher(teacher);  // Associe l'enseignant à l'enfant
+        }
+
+        System.out.println("✅ Enfant créé - ID: " + child.getId() + ", Nom: " + child.getName() + ", Parent: " + currentUser.getEmail());  // Log de confirmation
+
+        return childRepository.save(child);  // Sauvegarde l'enfant en base et le retourne
+    }
+
+    // Méthode pour récupérer un enfant par son ID (avec vérification des droits d'accès)
     public Child getChildById(Long id, String email) {
-        Child child = childRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Child not found"));
+        User currentUser = userRepository.findByEmail(email)  // Cherche l'utilisateur par email
+                .orElseThrow(() -> new RuntimeException("Utilisateur non trouvé: " + email));  // Lance exception si non trouvé
 
-        // FORCER LE CHARGEMENT DES RELATIONS
-        if (child.getParent() != null) {
-            child.getParent().getId();
-            child.getParent().getName();
-        }
-        if (child.getPsychologist() != null) {
-            child.getPsychologist().getId();
-            child.getPsychologist().getName();
-        }
-        if (child.getTeacher() != null) {
-            child.getTeacher().getId();
-            child.getTeacher().getName();
+        //  Utiliser la méthode sécurisée qui vérifie l'accès (parent, teacher ou psychologist)
+        Child child = childRepository.findByIdAndUserAccess(id, currentUser.getId());
+        
+        if (child == null) {  // Si aucun enfant n'est trouvé (ou accès refusé)
+            System.out.println(" ACCÈS REFUSÉ - User: " + currentUser.getEmail() + " (ID: " + currentUser.getId() + ") n'a pas accès à l'enfant ID: " + id);  // Log d'avertissement
+            throw new RuntimeException("Accès non autorisé à cet enfant");  // Lance exception
         }
 
-        if (email != null) {
-            User user = userRepository.findByEmail(email)
-                    .orElseThrow(() -> new RuntimeException("User not found"));
-
-            if (user.isParent() && (child.getParent() == null || !child.getParent().getId().equals(user.getId()))) {
-                throw new RuntimeException("Unauthorized");
-            }
-            if (user.isTeacher() && (child.getTeacher() == null || !child.getTeacher().getId().equals(user.getId()))) {
-                throw new RuntimeException("Unauthorized");
-            }
-            if (user.isPsychologist() && (child.getPsychologist() == null || !child.getPsychologist().getId().equals(user.getId()))) {
-                throw new RuntimeException("Unauthorized");
-            }
-        }
-
-        return child;
+        System.out.println("✅ ACCÈS AUTORISÉ - User: " + currentUser.getEmail() + " a accès à l'enfant: " + child.getName());  // Log de confirmation
+        return child;  // Retourne l'enfant
     }
 
-    @Transactional
-    public Child createChild(ChildRequest req, String email) {
-        User user = userRepository.findByEmail(email)
-                .orElseThrow(() -> new RuntimeException("User not found"));
+    @Transactional  // Exécute la méthode dans une transaction
+    public Child updateChild(Long id, ChildRequest req, String email) {  // Met à jour un enfant existant
+        User currentUser = userRepository.findByEmail(email)  // Cherche l'utilisateur par email
+                .orElseThrow(() -> new RuntimeException("Utilisateur non trouvé: " + email));  // Lance exception si non trouvé
+        
+        // Vérifier d'abord l'accès à l'enfant (parent, teacher ou psychologist)
+        Child child = childRepository.findByIdAndUserAccess(id, currentUser.getId());
+        
+        if (child == null) {  // Si aucun enfant n'est trouvé (ou accès refusé)
+            throw new RuntimeException("Accès non autorisé - Vous ne pouvez pas modifier cet enfant");  // Lance exception
+        }
+        
+        //  Seul le parent ou un admin peut modifier les informations de base de l'enfant
+        String role = currentUser.getRole().toString();  // Récupère le rôle de l'utilisateur
+        boolean isParent = child.getParent() != null && child.getParent().getId().equals(currentUser.getId());  // Vérifie si c'est le parent
+        boolean isAdmin = "ADMIN".equals(role);  // Vérifie si c'est un administrateur
+        
+        if (!isParent && !isAdmin) {  // Si ni parent ni admin
+            throw new RuntimeException("Seul le parent peut modifier les informations de l'enfant");  // Lance exception
+        }
 
-        Child child = new Child();
-        child.setName(req.getName());
-        child.setAge(req.getAge());
-        child.setNotes(req.getNotes());
+        // Mise à jour des champs uniquement s'ils sont fournis dans la requête
+        if (req.getName() != null) child.setName(req.getName());  // Met à jour le nom
+        if (req.getAge() != null) child.setAge(req.getAge());  // Met à jour l'âge
+        if (req.getNotes() != null) child.setNotes(req.getNotes());  // Met à jour les notes
 
-        if (user.isParent()) {
-            child.setParent(user);
-
-            if (req.getPsychologistId() != null && req.getPsychologistId() > 0) {
-                User psychologist = userRepository.findById(req.getPsychologistId())
-                        .orElseThrow(() -> new RuntimeException("Psychologist not found"));
-                child.setPsychologist(psychologist);
+        // Seul un admin peut modifier les assignations (psychologue/enseignant)
+        if (isAdmin) {  // Si l'utilisateur est administrateur
+            if (req.getPsychologistId() != null) {  // Si un psychologue est spécifié
+                User psychologist = userRepository.findById(req.getPsychologistId())  // Cherche le psychologue
+                        .orElseThrow(() -> new RuntimeException("Psychologue non trouvé"));  // Lance exception si non trouvé
+                if (!"PSYCHOLOGIST".equals(psychologist.getRole().toString())) {  // Vérifie le rôle
+                    throw new RuntimeException("L'utilisateur sélectionné n'est pas un psychologue");  // Lance exception
+                }
+                child.setPsychologist(psychologist);  // Met à jour le psychologue
             }
 
-            if (req.getTeacherId() != null && req.getTeacherId() > 0) {
-                User teacher = userRepository.findById(req.getTeacherId())
-                        .orElseThrow(() -> new RuntimeException("Teacher not found"));
-                child.setTeacher(teacher);
-            }
-        }
-        else if (user.isTeacher()) {
-            child.setTeacher(user);
-
-            if (req.getParentId() != null && req.getParentId() > 0) {
-                User parent = userRepository.findById(req.getParentId())
-                        .orElseThrow(() -> new RuntimeException("Parent not found"));
-                child.setParent(parent);
-            }
-
-            if (req.getPsychologistId() != null && req.getPsychologistId() > 0) {
-                User psychologist = userRepository.findById(req.getPsychologistId())
-                        .orElseThrow(() -> new RuntimeException("Psychologist not found"));
-                child.setPsychologist(psychologist);
+            if (req.getTeacherId() != null) {  // Si un enseignant est spécifié
+                User teacher = userRepository.findById(req.getTeacherId())  // Cherche l'enseignant
+                        .orElseThrow(() -> new RuntimeException("Enseignant non trouvé"));  // Lance exception si non trouvé
+                if (!"TEACHER".equals(teacher.getRole().toString())) {  // Vérifie le rôle
+                    throw new RuntimeException("L'utilisateur sélectionné n'est pas un enseignant");  // Lance exception
+                }
+                child.setTeacher(teacher);  // Met à jour l'enseignant
             }
         }
 
-        Child saved = childRepository.save(child);
-
-        // FORCER LE CHARGEMENT APRÈS SAUVEGARDE
-        if (saved.getParent() != null) {
-            saved.getParent().getName();
-        }
-        if (saved.getPsychologist() != null) {
-            saved.getPsychologist().getName();
-        }
-        if (saved.getTeacher() != null) {
-            saved.getTeacher().getName();
-        }
-
-        return saved;
+        System.out.println("✅ Enfant modifié - ID: " + id + " par: " + currentUser.getEmail());  // Log de confirmation
+        return childRepository.save(child);  // Sauvegarde et retourne l'enfant mis à jour
     }
 
-    @Transactional
-    public Child updateChild(Long id, ChildRequest req, String email) {
-        Child child = getChildById(id, email);
-        User user = userRepository.findByEmail(email)
-                .orElseThrow(() -> new RuntimeException("User not found"));
-
-        if (req.getName() != null) child.setName(req.getName());
-        if (req.getAge() != null) child.setAge(req.getAge());
-        if (req.getNotes() != null) child.setNotes(req.getNotes());
-
-        if ((user.isParent() || user.isTeacher()) && req.getPsychologistId() != null) {
-            Long psychId = req.getPsychologistId();
-            if (psychId != null && psychId > 0) {
-                User psychologist = userRepository.findById(psychId)
-                        .orElseThrow(() -> new RuntimeException("Psychologist not found"));
-                child.setPsychologist(psychologist);
-            } else {
-                child.setPsychologist(null);
-            }
+    @Transactional  // Exécute la méthode dans une transaction
+    public void deleteChild(Long id, String email) {  // Supprime un enfant
+        User currentUser = userRepository.findByEmail(email)  // Cherche l'utilisateur par email
+                .orElseThrow(() -> new RuntimeException("Utilisateur non trouvé: " + email));  // Lance exception si non trouvé
+        
+        // Vérifier d'abord l'accès à l'enfant (parent, teacher ou psychologist)
+        Child child = childRepository.findByIdAndUserAccess(id, currentUser.getId());
+        
+        if (child == null) {  // Si aucun enfant n'est trouvé (ou accès refusé)
+            throw new RuntimeException("Accès non autorisé - Vous ne pouvez pas supprimer cet enfant");  // Lance exception
         }
-
-        if (user.isParent() && req.getTeacherId() != null) {
-            Long teacherId = req.getTeacherId();
-            if (teacherId != null && teacherId > 0) {
-                User teacher = userRepository.findById(teacherId)
-                        .orElseThrow(() -> new RuntimeException("Teacher not found"));
-                child.setTeacher(teacher);
-            } else {
-                child.setTeacher(null);
-            }
+        
+        //  Seul le parent ou un admin peut supprimer un enfant
+        boolean isParent = child.getParent() != null && child.getParent().getId().equals(currentUser.getId());  // Vérifie si c'est le parent
+        boolean isAdmin = "ADMIN".equals(currentUser.getRole().toString());  // Vérifie si c'est un administrateur
+        
+        if (!isParent && !isAdmin) {  // Si ni parent ni admin
+            throw new RuntimeException("Seul le parent peut supprimer son enfant");  // Lance exception
         }
-
-        if (user.isTeacher() && req.getParentId() != null) {
-            Long parentId = req.getParentId();
-            if (parentId != null && parentId > 0) {
-                User parent = userRepository.findById(parentId)
-                        .orElseThrow(() -> new RuntimeException("Parent not found"));
-                child.setParent(parent);
-            } else {
-                child.setParent(null);
-            }
-        }
-
-        Child updated = childRepository.save(child);
-        if (updated.getParent() != null) updated.getParent().getName();
-        if (updated.getPsychologist() != null) updated.getPsychologist().getName();
-        if (updated.getTeacher() != null) updated.getTeacher().getName();
-
-        return updated;
-    }
-
-    @Transactional
-    public void deleteChild(Long id, String email) {
-        Child child = getChildById(id, email);
-        childRepository.delete(child);
+        
+        childRepository.delete(child);  // Supprime l'enfant (cascade supprime les logs, routines, etc.)
+        System.out.println("✅ Enfant supprimé - ID: " + id + " par: " + currentUser.getEmail());  // Log de confirmation
     }
 }

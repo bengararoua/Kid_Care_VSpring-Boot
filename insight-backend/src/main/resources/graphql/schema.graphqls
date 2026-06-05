@@ -1,0 +1,280 @@
+type Query {
+    # Children
+    children: [Child]
+    child(id: ID!): Child
+
+    # Behavior logs
+    logs(childId: ID!): [BehaviorLog]
+
+    # Insights
+    insights(childId: ID!): Insights
+
+    # Notifications
+    notifications: [Notification]
+    unreadNotificationCount: Int
+
+    # Messages
+    messages(userId: ID!): [Message]
+    unreadMessageCount: Int
+    contacts: [Contact]
+
+    # Users
+    psychologists: [User]
+    teachers: [User]
+    parents: [User]
+    me: User
+
+    # Routines
+    routines(childId: ID!): [Routine]
+
+    # Recommendations
+    recommendations(childId: ID!): [Recommendation]
+
+    # Notes
+    notes(childId: ID!): [PsychologistNote]
+
+    # Action Plan
+    latestActionPlan(childId: ID!): ActionPlan
+
+    # Appointments
+    appointments: [Appointment]
+    appointment(id: ID!): Appointment
+}
+
+type Mutation {
+    # Auth
+    login(email: String!, password: String!): AuthPayload
+    register(name: String!, email: String!, password: String!, role: String!): AuthPayload
+
+    # Children
+    createChild(input: ChildInput!): Child
+    updateChild(id: ID!, input: ChildInput!): Child
+    deleteChild(id: ID!): Boolean
+
+    # Behavior logs
+    createLog(input: LogInput!): BehaviorLog
+    deleteLog(id: ID!): Boolean
+
+    # Messages
+    sendMessage(receiverId: ID!, content: String!): Message
+    updateMessage(id: ID!, content: String!): Message
+    deleteMessage(id: ID!): Boolean
+    deleteConversation(userId: ID!): Boolean
+    markMessageAsRead(id: ID!): Message
+    markAllMessagesAsRead(userId: ID!): Boolean
+
+    # Notifications
+    markNotificationAsRead(id: ID!): Boolean
+    markAllNotificationsAsRead: Boolean
+    deleteNotification(id: ID!): Boolean
+    deleteAllNotifications: Boolean
+
+    # Recommendations
+    addRecommendation(childId: ID!, input: RecommendationInput!): Recommendation
+    toggleRecommendation(id: ID!): Recommendation
+    deleteRecommendation(id: ID!): Boolean
+
+    # Notes
+    addNote(childId: ID!, input: NoteInput!): PsychologistNote
+
+    # Routines
+    createRoutine(childId: ID!, input: RoutineInput!): Routine
+    updateRoutine(id: ID!, input: RoutineInput!): Routine
+    toggleRoutine(id: ID!): Routine
+    deleteRoutine(id: ID!): Boolean
+
+    # Action Plan
+    generateActionPlan(childId: ID!): ActionPlan
+
+    # Profile
+    updateProfile(name: String!, email: String!): User
+    updatePassword(currentPassword: String!, password: String!, passwordConfirmation: String!): Boolean
+    deleteAccount(password: String!): Boolean
+
+    # Appointments
+    createAppointment(input: AppointmentInput!): Appointment
+    updateAppointmentStatus(id: ID!, status: String!): Appointment
+    deleteAppointment(id: ID!): Boolean
+}
+
+type AuthPayload {
+    token: String!
+    user: User!
+}
+
+type User {
+    id: ID!
+    name: String!
+    email: String!
+    role: String!
+    points: Int
+    createdAt: String
+}
+
+type Child {
+    id: ID!
+    name: String!
+    age: Int!
+    notes: String
+    parentId: ID
+    parentName: String
+    psychologistId: ID
+    psychologistName: String
+    teacherId: ID
+    teacherName: String
+    createdAt: String
+}
+
+type BehaviorLog {
+    id: ID!
+    childId: ID!
+    focusLevel: Int!
+    mood: String!
+    sleepHours: Float!
+    socialInteraction: Int!
+    note: String
+    logDate: String!
+}
+
+type Insights {
+    childName: String
+    riskLevel: String
+    avgFocus: Float
+    avgSleep: Float
+    avgSocial: Float
+    totalLogs: Int
+    pattern: [String]
+    weeklyComparison: WeeklyComparison
+    moodDistribution: String
+}
+
+type WeeklyComparison {
+    currentWeekFocus: Float
+    previousWeekFocus: Float
+    change: Float
+}
+
+type Notification {
+    id: ID!
+    type: String!
+    title: String!
+    message: String!
+    isRead: Boolean!
+    createdAt: String
+}
+
+type Message {
+    id: ID!
+    senderId: ID!
+    receiverId: ID!
+    content: String!
+    isRead: Boolean!
+    createdAt: String
+}
+
+type Contact {
+    id: ID!
+    name: String!
+    email: String!
+    role: String!
+    lastMessage: String
+    unreadCount: Int
+}
+
+type Routine {
+    id: ID!
+    dayOfWeek: String!
+    time: String!
+    activity: String!
+    duration: Int
+    completed: Boolean!
+}
+
+type Recommendation {
+    id: ID!
+    title: String!
+    description: String!
+    category: String!
+    isCompleted: Boolean!
+    createdAt: String
+}
+
+type PsychologistNote {
+    id: ID!
+    note: String!
+    sessionDate: String!
+    psychologistName: String
+}
+
+type ActionPlan {
+    id: ID!
+    riskLevel: String!
+    generatedDate: String!
+    morningActivities: [String]
+    afternoonActivities: [String]
+    eveningActivities: [String]
+    communicationTips: [String]
+    gamesActivities: [String]
+}
+
+type Appointment {
+    id: ID!
+    title: String!
+    type: String!
+    status: String!
+    scheduledAt: String!
+    duration: Int!
+    location: String
+    notes: String
+    senderId: ID!
+    senderName: String
+    receiverId: ID!
+    receiverName: String
+}
+
+input ChildInput {
+    name: String!
+    age: Int!
+    notes: String
+    parentId: ID
+    psychologistId: ID
+    teacherId: ID
+}
+
+input LogInput {
+    childId: ID!
+    focusLevel: Int!
+    mood: String!
+    sleepHours: Float!
+    socialInteraction: Int!
+    note: String
+    logDate: String!
+}
+
+input RecommendationInput {
+    title: String!
+    description: String!
+    category: String!
+}
+
+input NoteInput {
+    note: String!
+    sessionDate: String!
+}
+
+input RoutineInput {
+    dayOfWeek: String!
+    time: String!
+    activity: String!
+    duration: Int
+}
+
+input AppointmentInput {
+    receiverId: ID!
+    title: String!
+    type: String!
+    scheduledAt: String!
+    duration: Int!
+    location: String
+    notes: String
+}

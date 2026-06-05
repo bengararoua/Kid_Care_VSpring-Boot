@@ -1,102 +1,117 @@
 <template>
   <div class="action-plan" v-if="plan">
-    <!-- Entête -->
-    <div class="plan-header" :class="riskClass">
+    <!-- Header -->
+    <div class="plan-header" :class="getRiskClass(plan.riskLevel)">
       <div class="risk-icon">
-        <span v-if="plan.risk_level === 'high'">🔴</span>
-        <span v-else-if="plan.risk_level === 'medium'">🟡</span>
+        <span v-if="plan.riskLevel === 'high'">🔴</span>
+        <span v-else-if="plan.riskLevel === 'medium'">🟡</span>
         <span v-else>🟢</span>
       </div>
       <div class="risk-info">
-        <h3>Niveau de risque : {{ getRiskLabel(plan.risk_level) }}</h3>
-        <p>Plan généré le {{ formatDate(plan.generated_date) }}</p>
+        <h3>Niveau de risque : {{ getRiskLabel(plan.riskLevel) }}</h3>
+        <p>Plan généré le {{ formatDate(plan.generatedDate) }}</p>
       </div>
     </div>
 
-    <!-- Journée type -->
+    <!-- Programme -->
     <div class="plan-schedule">
       <h3>📅 Programme de la journée</h3>
-      
-      <div class="time-block morning">
+
+      <!-- Matin -->
+      <div class="time-block">
         <div class="time-icon">🌅</div>
         <div class="time-content">
           <h4>Matin</h4>
           <ul>
-            <li v-for="activity in plan.morning_activities" :key="activity">
-              {{ activity }}
+            <li v-for="(activity, index) in getMorningActivities()" :key="'morning-' + index" class="activity-item">
+              {{ cleanText(activity) }}
+            </li>
+            <li v-if="getMorningActivities().length === 0" class="activity-item empty-item">
+              Aucune activité programmée
             </li>
           </ul>
         </div>
       </div>
 
-      <div class="time-block afternoon">
+      <!-- Après-midi -->
+      <div class="time-block">
         <div class="time-icon">☀️</div>
         <div class="time-content">
           <h4>Après-midi</h4>
           <ul>
-            <li v-for="activity in plan.afternoon_activities" :key="activity">
-              {{ activity }}
+            <li v-for="(activity, index) in getAfternoonActivities()" :key="'afternoon-' + index" class="activity-item">
+              {{ cleanText(activity) }}
+            </li>
+            <li v-if="getAfternoonActivities().length === 0" class="activity-item empty-item">
+              Aucune activité programmée
             </li>
           </ul>
         </div>
       </div>
 
-      <div class="time-block evening">
+      <!-- Soirée -->
+      <div class="time-block">
         <div class="time-icon">🌙</div>
         <div class="time-content">
           <h4>Soirée</h4>
           <ul>
-            <li v-for="activity in plan.evening_activities" :key="activity">
-              {{ activity }}
+            <li v-for="(activity, index) in getEveningActivities()" :key="'evening-' + index" class="activity-item">
+              {{ cleanText(activity) }}
+            </li>
+            <li v-if="getEveningActivities().length === 0" class="activity-item empty-item">
+              Aucune activité programmée
             </li>
           </ul>
         </div>
       </div>
     </div>
 
-    <!-- Conseils de communication -->
+    <!-- Conseils -->
     <div class="plan-tips">
       <h3>💬 Conseils de communication</h3>
       <ul>
-        <li v-for="tip in plan.communication_tips" :key="tip">
-          {{ tip }}
+        <li v-for="(tip, index) in getCommunicationTips()" :key="'tip-' + index" class="activity-item">
+          {{ cleanText(tip) }}
+        </li>
+        <li v-if="getCommunicationTips().length === 0" class="activity-item empty-item">
+          Aucun conseil disponible
         </li>
       </ul>
     </div>
 
-    <!-- Activités recommandées -->
+    <!-- Jeux -->
     <div class="plan-games">
       <h3>🎮 Activités recommandées</h3>
       <div class="games-grid">
-        <div v-for="game in plan.games_activities" :key="game" class="game-card">
-          {{ game }}
+        <div v-for="(game, index) in getGamesActivities()" :key="'game-' + index" class="game-card">
+          {{ cleanText(game) }}
+        </div>
+        <div v-if="getGamesActivities().length === 0" class="game-card empty-game">
+          Aucune activité recommandée
         </div>
       </div>
     </div>
 
-    <!-- Bouton d'impression -->
-    <button @click="printPlan" class="btn-print">
-      🖨️ Imprimer le plan
-    </button>
+    <button @click="printPlan" class="btn-print">🖨️ Imprimer le plan</button>
   </div>
 
+  <!-- Loading -->
   <div v-else-if="loading" class="loading-plan">
     <div class="spinner"></div>
     <p>Génération du plan personnalisé...</p>
   </div>
 
-  <div v-else-if="!plan && !loading" class="no-plan">
+  <!-- Empty -->
+  <div v-else class="no-plan">
     <div class="no-plan-icon">📋</div>
     <p>Cliquez sur "Générer mon plan" pour obtenir un programme personnalisé</p>
-    <button @click="generatePlan" class="btn-generate">
-      ✨ Générer mon plan
-    </button>
+    <button @click="generatePlan" class="btn-generate">✨ Générer mon plan</button>
   </div>
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
-import axios from 'axios'
+import { ref, watch } from 'vue'
+import api from '@/api/api'
 
 const props = defineProps({
   childId: {
@@ -108,65 +123,110 @@ const props = defineProps({
 const plan = ref(null)
 const loading = ref(false)
 
-const riskClass = computed(() => {
-  if (!plan.value) return ''
-  return {
-    'high': 'risk-high',
-    'medium': 'risk-medium',
-    'low': 'risk-low'
-  }[plan.value.risk_level]
-})
+const getRiskClass = (risk) => {
+  return { high: 'risk-high', medium: 'risk-medium', low: 'risk-low' }[risk] || 'risk-low'
+}
 
 const getRiskLabel = (risk) => {
   return {
-    'high': 'Élevé - Intervention recommandée',
-    'medium': 'Modéré - Surveillance active',
-    'low': 'Faible - Maintenir les bonnes habitudes'
-  }[risk]
+    high: 'Élevé - Intervention recommandée',
+    medium: 'Modéré - Surveillance active',
+    low: 'Faible - Maintenir les bonnes habitudes'
+  }[risk] || 'Non déterminé'
 }
 
 const formatDate = (date) => {
-  return new Date(date).toLocaleDateString('fr-FR', {
-    day: 'numeric',
-    month: 'long',
-    year: 'numeric'
-  })
+  if (!date) return 'N/A'
+  try {
+    return new Date(date).toLocaleDateString('fr-FR', {
+      day: 'numeric', month: 'long', year: 'numeric'
+    })
+  } catch (e) {
+    return 'N/A'
+  }
 }
 
+const cleanText = (text) => {
+  if (!text) return ''
+  let cleaned = text
+  // Supprimer les balises <br>
+  cleaned = cleaned.replace(/<br\s*\/?>/gi, ' ')
+  // Supprimer les • au début
+  cleaned = cleaned.replace(/^[•●]\s*/, '')
+  // Supprimer les • au milieu
+  cleaned = cleaned.replace(/[•●]\s*/g, ' ')
+  // Supprimer les espaces multiples
+  cleaned = cleaned.replace(/\s+/g, ' ').trim()
+  return cleaned
+}
+
+const splitActivities = (raw) => {
+  if (!raw) return []
+  if (Array.isArray(raw)) return raw.filter(i => i && i.trim())
+
+  let text = String(raw).trim()
+  
+  // Diviser par ||
+  let parts = text.split(/\|\|/)
+  
+  // Nettoyer chaque partie
+  return parts
+    .map(p => p.trim())
+    .filter(p => p && p.length > 0 && p !== '||')
+}
+
+const getMorningActivities = () => splitActivities(plan.value?.morningActivities)
+const getAfternoonActivities = () => splitActivities(plan.value?.afternoonActivities)
+const getEveningActivities = () => splitActivities(plan.value?.eveningActivities)
+const getCommunicationTips = () => splitActivities(plan.value?.communicationTips)
+const getGamesActivities = () => splitActivities(plan.value?.gamesActivities)
+
 const generatePlan = async () => {
+  if (!props.childId) return
   loading.value = true
   try {
-    const res = await axios.get(`/api/action-plan/${props.childId}/generate`)
-    plan.value = res.data
+    const response = await api.get(`/action-plan/${props.childId}/generate`)
+    if (response.data && !response.data.error) {
+      plan.value = response.data
+      console.log('✅ Plan généré:', plan.value)
+    }
   } catch (err) {
-    console.error('Error generating plan:', err)
+    console.error('Erreur génération plan:', err)
   } finally {
     loading.value = false
   }
 }
 
 const loadLatestPlan = async () => {
+  if (!props.childId) return
   try {
-    const res = await axios.get(`/api/action-plan/${props.childId}/latest`)
-    plan.value = res.data
+    const response = await api.get(`/action-plan/${props.childId}/latest`)
+    if (response.data && !response.data.error) {
+      plan.value = response.data
+      console.log('✅ Plan chargé:', plan.value)
+    }
   } catch (err) {
-    console.log('No plan yet')
+    if (err.response?.status !== 404) {
+      console.error('Erreur chargement plan:', err)
+    }
+    plan.value = null
   }
 }
 
 const printPlan = () => {
-  const printContent = document.querySelector('.action-plan').cloneNode(true)
+  const printContent = document.querySelector('.action-plan')
+  if (!printContent) return
   const originalContent = document.body.innerHTML
   document.body.innerHTML = printContent.outerHTML
   window.print()
   document.body.innerHTML = originalContent
-  window.location.reload()
 }
 
-// Charger le dernier plan au montage
-loadLatestPlan()
+watch(() => props.childId, () => {
+  loadLatestPlan()
+}, { immediate: true })
 
-defineExpose({ generatePlan })
+defineExpose({ generatePlan, loadLatestPlan })
 </script>
 
 <style scoped>
@@ -176,12 +236,12 @@ defineExpose({ generatePlan })
   padding: 24px;
   margin-top: 24px;
   box-shadow: 0 2px 10px rgba(0,0,0,0.05);
-  animation: fadeIn 0.5s ease;
+  animation: fadeIn 0.3s ease;
 }
 
 @keyframes fadeIn {
-  from { opacity: 0; transform: translateY(20px); }
-  to { opacity: 1; transform: translateY(0); }
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
 }
 
 .plan-header {
@@ -193,171 +253,139 @@ defineExpose({ generatePlan })
   margin-bottom: 24px;
 }
 
-.risk-high {
-  background: linear-gradient(135deg, #fef2f2, #fee2e2);
-  border-left: 4px solid #ef4444;
-}
+.risk-high   { background: #fee2e2; border-left: 5px solid #ef4444; }
+.risk-medium { background: #fef3c7; border-left: 5px solid #f59e0b; }
+.risk-low    { background: #d1fae5; border-left: 5px solid #10b981; }
 
-.risk-medium {
-  background: linear-gradient(135deg, #fffbeb, #fef3c7);
-  border-left: 4px solid #f59e0b;
-}
-
-.risk-low {
-  background: linear-gradient(135deg, #ecfdf5, #d1fae5);
-  border-left: 4px solid #10b981;
-}
-
-.risk-icon {
-  font-size: 48px;
-}
-
-.risk-info h3 {
-  font-size: 18px;
-  margin-bottom: 4px;
-}
-
-.risk-info p {
-  font-size: 12px;
-  color: #6b7280;
-}
+.risk-icon { font-size: 48px; }
+.risk-info h3 { margin-bottom: 5px; font-size: 18px; color: #1f2937; }
+.risk-info p  { font-size: 12px; color: #6b7280; margin: 0; }
 
 .plan-schedule h3,
 .plan-tips h3,
 .plan-games h3 {
-  font-size: 18px;
-  margin-bottom: 16px;
+  margin-bottom: 20px;
   color: #1f2937;
+  font-size: 18px;
 }
 
 .time-block {
   display: flex;
   gap: 16px;
-  padding: 16px;
-  margin-bottom: 12px;
   background: #f9fafb;
-  border-radius: 16px;
+  padding: 18px;
+  border-radius: 18px;
+  margin-bottom: 16px;
   transition: transform 0.2s;
 }
+.time-block:hover { transform: translateX(5px); }
 
-.time-block:hover {
-  transform: translateX(5px);
-}
+.time-icon { font-size: 32px; }
+.time-content { flex: 1; }
+.time-content h4 { margin-bottom: 14px; color: #374151; font-size: 16px; }
+.time-content ul, .plan-tips ul { margin: 0; padding: 0; }
 
-.time-icon {
-  font-size: 32px;
-}
-
-.time-content h4 {
-  font-size: 16px;
-  font-weight: 600;
-  margin-bottom: 8px;
-  color: #374151;
-}
-
-.time-content ul {
-  margin: 0;
-  padding-left: 20px;
-}
-
-.time-content li {
-  font-size: 14px;
-  color: #4b5563;
-  margin-bottom: 4px;
-}
-
-.plan-tips ul {
+.activity-item {
   list-style: none;
-  padding: 0;
-}
-
-.plan-tips li {
-  padding: 12px;
-  margin-bottom: 8px;
-  background: #f3f4f6;
+  background: white;
+  padding: 12px 16px;
   border-radius: 12px;
-  font-size: 14px;
+  margin-bottom: 8px;
+  border-left: 4px solid #667eea;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.05);
   color: #374151;
+  line-height: 1.4;
+  transition: all 0.2s;
+  font-size: 14px;
+}
+.activity-item:hover {
+  transform: translateX(4px);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+}
+.empty-item {
+  border-left-color: #9ca3af;
+  color: #9ca3af;
+  font-style: italic;
+  background: #f3f4f6;
 }
 
 .games-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-  gap: 12px;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 14px;
 }
-
 .game-card {
-  padding: 12px;
   background: linear-gradient(135deg, #eef2ff, #e0e7ff);
-  border-radius: 12px;
+  padding: 16px;
+  border-radius: 16px;
   text-align: center;
-  font-size: 14px;
-  font-weight: 500;
+  font-weight: 600;
   color: #1e40af;
+  transition: all 0.2s;
+  cursor: default;
+  font-size: 14px;
+}
+.game-card:hover {
+  transform: scale(1.02);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+}
+.empty-game {
+  background: #f3f4f6;
+  color: #9ca3af;
+  font-weight: normal;
 }
 
 .btn-print, .btn-generate {
+  width: 100%;
   margin-top: 24px;
-  padding: 12px 24px;
+  padding: 14px;
   border: none;
   border-radius: 40px;
   font-weight: 600;
   cursor: pointer;
-  width: 100%;
   transition: all 0.3s;
 }
-
 .btn-generate {
   background: linear-gradient(135deg, #1a0a2e, #2d1b4e);
   color: white;
 }
-
+.btn-generate:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(26, 10, 46, 0.3);
+}
 .btn-print {
   background: #f3f4f6;
   color: #374151;
 }
-
-.btn-generate:hover, .btn-print:hover {
+.btn-print:hover {
   transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.1);
 }
 
 .loading-plan, .no-plan {
-  text-align: center;
-  padding: 60px;
   background: white;
+  padding: 60px;
   border-radius: 24px;
+  text-align: center;
   margin-top: 24px;
 }
-
 .spinner {
-  width: 50px;
-  height: 50px;
-  border: 3px solid #e0e6ed;
+  width: 50px; height: 50px;
+  border: 4px solid #e5e7eb;
   border-top-color: #1a0a2e;
   border-radius: 50%;
-  animation: spin 1s linear infinite;
   margin: 0 auto 20px;
+  animation: spin 1s linear infinite;
 }
+.no-plan-icon { font-size: 64px; margin-bottom: 14px; opacity: 0.5; }
 
-@keyframes spin {
-  to { transform: rotate(360deg); }
-}
-
-.no-plan-icon {
-  font-size: 64px;
-  margin-bottom: 16px;
-  opacity: 0.5;
-}
+@keyframes spin { to { transform: rotate(360deg); } }
 
 @media (max-width: 768px) {
-  .games-grid {
-    grid-template-columns: 1fr;
-  }
-  
-  .time-block {
-    flex-direction: column;
-    text-align: center;
-  }
+  .action-plan { padding: 16px; }
+  .time-block { flex-direction: column; text-align: center; }
+  .time-content ul { text-align: left; }
+  .games-grid { grid-template-columns: 1fr; }
+  .activity-item { font-size: 13px; }
 }
 </style>
